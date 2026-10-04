@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Finanças do Casal</title>
 <meta name="robots" content="noindex,nofollow">
+<meta name="fc-versao" content="e7b0a2c3">
 <meta name="theme-color" content="#15103A">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -2430,6 +2431,7 @@ function ajustes(){
     <button class="btn" data-act="backup">Baixar backup</button>
     <label class="btn ghost filebtn">Restaurar backup<input type="file" id="bkFile" accept=".json,application/json" hidden></label>
     ${ONLINE?`<button class="btn ghost" data-act="carregarSite">Carregar dados do site</button><p class="muted small" style="margin:8px 0 0">Troca os dados deste aparelho pelos que foram publicados no site (pede a senha).</p>`:""}</section></div>
+  <p class="muted small" style="margin:0 0 10px">Versão do app: ${esc(VERSAO==="local"?"arquivo local":VERSAO)}</p>
   <div class="actions"><button class="btn" data-act="saveCfg">Salvar ajustes</button>
   <button class="btn ghost" data-act="export">Exportar planilha (CSV)</button></div>
   <p class="muted small" style="text-align:center;margin-top:14px">${S.mode==="db"?"Os dados ficam compartilhados com quem tiver acesso a este app.":"Os dados estão salvos só neste aparelho. Abra pelo app Claude para compartilhar com o casal."}</p>`;
@@ -2828,6 +2830,13 @@ async function migrarSubs(){try{if(localStorage.getItem("fc_mig_subs"))return}ca
     const d=Object.assign({},it,{sub:c.sub});delete d.id;if(await saveItem(it.id,d))n++}
   try{localStorage.setItem("fc_mig_subs","1")}catch(e){}if(n)toast(`${n} ${n===1?"lançamento ganhou":"lançamentos ganharam"} subtipo automaticamente`)}
 function migrarCom(){let n=0;for(const it of Object.values(S.items))if(it.cat==="com"){it.cat="srv";it.sub="comercial";n++}if(n&&S.mode!=="db")lsSet(LS.items,S.items)}
+/* versão online: confere se há publicação nova (ao abrir, ao voltar para a janela e a cada 5 min) e recarrega sozinho quando nada está aberto */
+const VERSAO=(document.querySelector('meta[name="fc-versao"]')||{}).content||"local";
+async function versaoPublicada(){try{const r=await fetch(location.pathname+"?v="+Date.now(),{cache:"no-store"});if(!r.ok)return null;const m=(await r.text()).match(/<meta name="fc-versao" content="([^"]+)"/);return m?m[1]:null}catch(e){return null}}
+async function checarVersao(){if(!ONLINE||VERSAO==="local")return;const v=await versaoPublicada();if(!v||v===VERSAO)return;
+  if(F||S.travado&&document.getElementById("lockP")&&document.getElementById("lockP").value){toast("Versão nova do app publicada. Ela entra ao fechar esta tela.");return}
+  try{if(sessionStorage.getItem("fc_recarregou")===v)return;sessionStorage.setItem("fc_recarregou",v)}catch(e){}location.replace(location.pathname+"?v="+encodeURIComponent(v))}
+if(ONLINE){setTimeout(checarVersao,1500);setInterval(checarVersao,5*60000);document.addEventListener("visibilitychange",()=>{if(!document.hidden)checarVersao()})}
 applyTheme();
 (async()=>{const precisa=ONLINE&&!temDadosLocais();if(precisa){S.travado=true;document.body.classList.add("travado")}const pk=precisa?await lerPacote():null;if(pk){telaSenha(pk);return}
   S.travado=false;seedIfEmpty();loadLocal();migrarCom();render();setTimeout(()=>aplicarArquivoCotacoes(),300);setTimeout(migrarSubs,700)})();
