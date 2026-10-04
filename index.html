@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Finanças do Casal</title>
 <meta name="robots" content="noindex,nofollow">
-<meta name="fc-versao" content="e7b0a2c3">
+<meta name="fc-versao" content="51dd4778">
 <meta name="theme-color" content="#15103A">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -1971,11 +1971,13 @@ const dzStops=a=>a.map(([o,c])=>`<stop offset="${o}" stop-color="${c}"/>`).join(
 const DZM={t:c=>{const m=dzMix(c,"#9aa3b5",38);return [[0,dzSh(m,50)],[.12,dzSh(m,-10)],[.24,dzSh(m,35)],[.38,dzSh(m,-18)],[.5,dzSh(m,28)],[.64,dzSh(m,-22)],[.78,dzSh(m,18)],[1,dzSh(m,-30)]]},
   w:c=>{const m=dzMix(c,"#9aa3b5",38);return [[0,dzSh(m,-60)],[.15,dzSh(m,20)],[.3,dzSh(m,-40)],[.46,dzSh(m,60)],[.52,dzSh(m,70)],[.62,dzSh(m,-20)],[.8,dzSh(m,30)],[1,dzSh(m,-60)]]},
   i:c=>[[0,"#1a1d26"],[1,dzMix(c,"#555b6b",30)]]};
-function dzTot(d){return ["nec","des","via"].reduce((s,c)=>s+(d.porCat[c]||0),0)}
+/* categorias que formam o "Gasto no mês": as do casal + Prestação de serviço (empresa, sem meta) */
+const DZ_CATS=["nec","des","via","srv"];
+function dzTot(d){return DZ_CATS.reduce((s,c)=>s+(d.porCat[c]||0),0)}
 function ringHTML(d){
   const uid="dz",{cx,rx,d:dp,hole,W}=DZ,ry=rx*DZ.tilt,cy=ry+16,irx=rx*hole,iry=ry*hole,H=dzF(cy+dp+ry*1.25),GAP=1.1;
   const tot=dzTot(d);let a=0;
-  const segs=tot?["nec","des","via"].filter(k=>d.porCat[k]>0).map((k,i)=>{const v=d.porCat[k],a0=a,a1=a+v/tot*360;a=a1;return {k,v,i,a0:a0+GAP/2,a1:a1-GAP/2}}):[{k:"vazio",v:0,i:0,a0:0,a1:359.9}];
+  const segs=tot?DZ_CATS.filter(k=>d.porCat[k]>0).map((k,i)=>{const v=d.porCat[k],a0=a,a1=a+v/tot*360;a=a1;return {k,v,i,a0:a0+GAP/2,a1:a1-GAP/2}}):[{k:"vazio",v:0,i:0,a0:0,a1:359.9}];
   const col=k=>k==="vazio"?"var(--muted)":`var(--${k})`;
   /* a queda das fatias toca ao abrir o Painel ou trocar de mês; renders seguidos logo na abertura não cortam a animação */
   const now=Date.now();if(S.dz.intro!==S.sel){S.dz.intro=S.sel;S.dz.t0=now}
@@ -2118,6 +2120,13 @@ function painel(){
       ${fix?`<div class="track split"><div class="fill" style="width:${pf}%;background:${cF}"></div><div class="fill fv" style="width:${Math.max(0,(ov?100:p)-pf)}%;background:${cV}"></div></div>`
         :`<div class="track"><div class="fill" style="width:${p}%;background:${ov?"var(--alert)":`linear-gradient(90deg,color-mix(in srgb,var(--${c}) 60%,transparent),var(--${c}))`}"></div></div>`}
       <div class="sub${ov?" over":""}">Meta ${brl(meta)}. ${sub} ${c==="inv"?"":cmp(v,prev.porCat[c]||0)}</div>${fix?`<div class="sub fxsplit"><i class="sq" style="background:${cF}"></i>Fixas ${brl(fix)} · <i class="sq lt" style="background:${cV}"></i>variáveis ${brl(Math.max(0,v-fix))}</div>`:""}${subs}</div>`}).join("");
+  const vS=d.porCat.srv||0;
+  const srvB=vS?(()=>{const fix=fixC.srv||0,pf=fix/vS*100,ps=d.porSubC.srv||{},ks=Object.keys(SUBC.srv).filter(k=>ps[k]>0).sort((a,b)=>ps[b]-ps[a]),lt="color-mix(in srgb,var(--srv) 45%,transparent)";
+    const subs=ks.length?`<div class="subs">`+ks.map(k=>`<div class="subrow"><span>${SUBC.srv[k]}</span><span>${brl(ps[k])} <small>${Math.round(ps[k]/vS*100)}%</small></span><div class="track thin"><div class="fill" style="width:${ps[k]/vS*100}%;background:var(--srv)"></div></div></div>`).join("")+`</div>`:"";
+    return `<div class="bucket" data-dzk="srv" role="button" tabindex="0"><div class="row"><span class="nm"><span class="dot" style="background:var(--srv);color:var(--srv)"></span>${CATS.srv.nome} <span class="muted small">empresa</span></span><b>${brl(vS)}</b></div>
+      ${fix?`<div class="track split"><div class="fill" style="width:${pf}%;background:var(--srv)"></div><div class="fill fv" style="width:${100-pf}%;background:${lt}"></div></div>`:`<div class="track"><div class="fill" style="width:100%;background:${lt}"></div></div>`}
+      <div class="sub">Sem meta: custo da empresa, fora da regra ${cfg.pct.nec}/${cfg.pct.des}/${cfg.pct.inv}/${cfg.pct.via}. ${cmp(vS,prev.porCat.srv||0)}</div>
+      ${fix?`<div class="sub fxsplit"><i class="sq" style="background:var(--srv)"></i>Fixas ${brl(fix)} · <i class="sq lt" style="background:${lt}"></i>variáveis ${brl(Math.max(0,vS-fix))}</div>`:""}${subs}</div>`})():"";
   const term=d.terminam.length?d.terminam.map(it=>`<div class="pay"><span>${esc(it.desc)} <span class="muted small">${formaNome(it.forma)}, ${it.parcelas}/${it.parcelas}</span></span><b>${brl(val(it))}</b></div>`).join("")
     :`<p class="muted small" style="margin:0">Nenhuma parcela termina neste mês.</p>`;
   const prox=monthData(addM(S.sel,1)),diff=d.cartao-prox.cartao;
@@ -2177,8 +2186,8 @@ function painel(){
   </section>
   <section class="panel glass" id="evolBox"><h2>Evolução em 12 meses</h2><p class="desc">Seis meses para trás e seis para frente.</p><div id="evolIn">${evolHTML()}</div></section>
   <section class="panel glass"><h2>Divisão da renda</h2>
-    <p class="desc">${cfg.pct.nec}% necessidades, ${cfg.pct.des}% desejos, ${cfg.pct.inv}% investimentos e ${cfg.pct.via}% viagens, sobre ${brl(cfg.renda)}.${Object.keys(fixC).some(k=>CATS_ORC.includes(k))?" Parte escura da barra: despesas fixas.":""}</p>
-    ${ringHTML(d)}${buckets}
+    <p class="desc">${cfg.pct.nec}% necessidades, ${cfg.pct.des}% desejos, ${cfg.pct.inv}% investimentos e ${cfg.pct.via}% viagens, sobre ${brl(cfg.renda)}.${Object.keys(fixC).some(k=>CATS_ORC.includes(k))?" Parte escura da barra: despesas fixas.":""}${(d.porCat.srv||0)>0?" Prestação de serviço (empresa) entra no gasto do mês, sem meta.":""}</p>
+    ${ringHTML(d)}${buckets}${srvB}
   </section>
   <section class="panel glass"><h2 class="fat-h">Faturas do mês ${fatHead}</h2><p class="desc">Marque quando pagar e anexe o comprovante. O histórico fica guardado.</p>${fat}</section>
   <section class="panel glass"><h2>Patrimônio</h2><p class="desc">Investimentos ficam separados dos gastos.</p>${patri}<button class="btn ghost" data-act="goPatri">Abrir patrimônio</button></section>
