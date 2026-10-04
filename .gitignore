@@ -1,0 +1,4 @@
+*.bak*
+_*
+*.json
+!dados.enc.json

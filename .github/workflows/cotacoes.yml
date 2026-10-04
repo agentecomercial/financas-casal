@@ -1,0 +1,24 @@
+name: Cotações
+on:
+  schedule:
+    - cron: "30 21 * * 1-5"   # 18h30 de Brasília, dias úteis
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Buscar cotações no Yahoo Finance
+        id: busca
+        continue-on-error: true   # o Yahoo às vezes recusa IPs de servidor; tenta de novo no próximo dia útil
+        shell: pwsh
+        run: ./Atualizar-Cotacoes.ps1
+      - name: Publicar cotacoes.js
+        if: steps.busca.outcome == 'success'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cotacoes.js
+          git diff --cached --quiet || (git commit -m "Cotações: atualização automática" && git push)
