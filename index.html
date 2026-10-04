@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Finanças do Casal</title>
 <meta name="robots" content="noindex,nofollow">
-<meta name="fc-versao" content="eaee7c49">
+<meta name="fc-versao" content="933d2e06">
 <meta name="theme-color" content="#15103A">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -267,6 +267,9 @@ button.pay.fx-link b{color:var(--nec)}
 .sit-b h3{margin:0 0 4px;font-size:1rem}
 .sit-b .pay{padding:8px 0}
 .sit-n{margin:8px 0 0}
+.sit-b .pay[data-sitdet]{cursor:pointer;border-radius:8px;margin:0 -8px;padding-left:8px;padding-right:8px;transition:background .15s}
+.sit-b .pay[data-sitdet]:hover,.sit-b .pay[data-sitdet]:focus-visible{background:var(--glass2);outline:none}
+.sit-b .pay[data-sitdet] span::after{content:" ›";opacity:.45}
 @media (max-width:820px){.sit{grid-template-columns:1fr}}
 .alert.warn{background:color-mix(in srgb,var(--gold) 16%,transparent);color:var(--gold);border-color:color-mix(in srgb,var(--gold) 35%,transparent)}
 .cardcfg{border-top:1px solid var(--stroke);padding-top:12px;margin-top:4px}
@@ -852,6 +855,29 @@ function drawSubDet(){const {cat,sub}=F,d=monthData(S.sel),subOk=x=>(SUBC[cat]&&
     <div class="sd-tot"><span class="muted small">${mLong(S.sel)} · ${l.length} ${l.length===1?"lançamento":"lançamentos"}</span><b>${brl(tot)}</b></div>
     ${corpo||`<p class="muted">Nenhum lançamento neste mês.</p>`}
     <p class="muted small" style="margin:12px 0">Toque num lançamento para ver ou editar.</p><button class="btn ghost" data-act="close">Fechar</button>`}
+/* Visão geral → Total / Pago / Pendente: cada item com origem, situação e atalho para onde ele mora */
+function openSitDet(f){F={mode:"sitdet",sdf:f};drawSitDet();if(!sheet.classList.contains("open"))openSheet()}
+function drawSitDet(){const f=F.sdf,m=S.sel,d=monthData(m),hoje=todayStr(),venc=dia=>m+"-"+String(Math.min(28,dia)).padStart(2,"0");
+  const sec=[];
+  /* despesas fixas */
+  const fx=fixasMes(m).filter(x=>f==="total"||(f==="pago"?x.pg:!x.pg)).sort((a,b)=>(a.it.dia||99)-(b.it.dia||99)||b.v-a.v);
+  if(fx.length)sec.push(["🏠 Despesas fixas",fx.map(({it,v,pg})=>{const late=!pg&&it.dia&&venc(it.dia)<hoje;
+    return {v,attr:`data-sdfix="${it.id}"`,t:it.desc,meta:`${meioNome(it)} · ${pg?`<span class="pos">pago em ${quando(pg.pagoEm)}</span>`:late?`<span class="neg">vencida dia ${it.dia}</span>`:`pendente${it.dia?` · vence dia ${it.dia}`:""}`}`}})]);
+  /* faturas dos cartões */
+  const ct=[];for(const k of cardIds()){const v=d.porForma[k]||0;if(!v)continue;const c=S.cfg.cartoes[k],pg=S.pag[m+"_"+k],pago=pg?Math.min(pg.valor,v):0,pend=v-pago,vk=venc(c.vence);
+    const val=f==="total"?v:f==="pago"?pago:pend;if(!val)continue;const n=d.lista.filter(x=>x.it.forma===k).length;
+    ct.push({v:val,attr:`data-sdcard="${k}"`,t:"Fatura "+c.nome,meta:`${n} ${n===1?"lançamento":"lançamentos"} · ${pg?`<span class="pos">paga em ${fmtD(pg.data)}</span>${pend?` · <span class="neg">faltam ${brl(pend)}</span>`:""}`:vk<hoje?`<span class="neg">vencida dia ${c.vence}</span>`:`vence dia ${c.vence}`}`})}
+  if(ct.length)sec.push(["💳 Cartões",ct]);
+  /* compras à vista: saem na hora, contam como pagas */
+  if(f!=="pend"){const av=d.lista.filter(x=>!compromete(x.it)&&!ehFixa(x.it)&&x.it.cat!=="inv").sort((a,b)=>b.v-a.v);
+    if(av.length)sec.push(["Compras à vista",av.map(({it,v})=>({v,attr:`data-sdit="${it.id}"`,t:it.desc,meta:`${formaNome(it.forma)} · <span class="pos">paga na hora</span>`}))])}
+  const tot=sec.reduce((s,[,l])=>s+l.reduce((a,x)=>a+x.v,0),0),n=sec.reduce((s,[,l])=>s+l.length,0);
+  const tit={total:"Total de despesas",pago:"Pago",pend:"Pendente"}[f];
+  sheetIn.innerHTML=`<div class="grab"></div><h2>Visão geral › ${tit}</h2>
+    ${seg("sdf",[["total","Total"],["pago","Pago"],["pend","Pendente"]],f)}
+    <div class="sd-tot" style="margin-top:12px"><span class="muted small">${mLong(m)} · ${n} ${n===1?"item":"itens"}</span><b class="${f==="pago"?"pos":f==="pend"&&tot?"neg":""}">${brl(tot)}</b></div>
+    ${sec.map(([g,l])=>`<div class="group"><h3><span>${g}</span><span>${brl(l.reduce((a,x)=>a+x.v,0))}</span></h3>${l.map(x=>`<button class="item" ${x.attr}><span class="t"><span class="d">${esc(x.t)}</span><span class="meta">${x.meta}</span></span><span class="val">${brl(x.v)}</span></button>`).join("")}</div>`).join("")||`<p class="muted">${f==="pend"?"Nada pendente neste mês. 🎉":"Nada neste mês."}</p>`}
+    <p class="muted small" style="margin:12px 0">Toque num item: a despesa fixa e a compra abrem para editar; a fatura abre os lançamentos do cartão.</p><button class="btn ghost" data-act="close">Fechar</button>`}
 function telaSenha(pk,opt){opt=opt||{};S.travado=true;document.body.classList.add("travado");window.scrollTo(0,0);
   app.innerHTML=`<section class="panel glass lock"><h1>Finanças do Casal</h1>
     <p class="desc">${opt.recarregar?"Isto troca os dados deste aparelho pelos do site.":"Os dados deste site estão protegidos."} Digite a senha para carregá-los neste aparelho.</p>
@@ -2291,9 +2317,9 @@ function situacao(m){const d=monthData(m),fx=fixasMes(m);
   return {fx:F0,ct:C0,av,ger:G0}}
 function situacaoHTML(){const s0=situacao(S.sel),bar=(o,c)=>`<div class="track"><div class="fill" style="width:${o.prev?Math.round(o.pago/o.prev*100):0}%;background:${c}"></div></div>`;
   const bloco=(ic,tit,o,c,extra,go)=>`<div class="sit-b"${go?` ${go} role="button" tabindex="0"`:""}><h3>${ic} ${tit}</h3>
-    <div class="pay"><span>${tit==="Visão geral"?"Total de despesas":tit==="Cartões"?"Total das faturas":"Total previsto"}</span><b>${brl(o.prev)}</b></div>
-    <div class="pay"><span>Pago</span><b class="pos">${brl(o.pago)}</b></div>
-    <div class="pay"><span>Pendente</span><b class="${o.pend>0?"neg":""}">${brl(o.pend)}</b></div>${bar(o,c)}${extra||""}</div>`;
+    <div class="pay"${tit==="Visão geral"?' data-sitdet="total" role="button" tabindex="0"':""}><span>${tit==="Visão geral"?"Total de despesas":tit==="Cartões"?"Total das faturas":"Total previsto"}</span><b>${brl(o.prev)}</b></div>
+    <div class="pay"${tit==="Visão geral"?' data-sitdet="pago" role="button" tabindex="0"':""}><span>Pago</span><b class="pos">${brl(o.pago)}</b></div>
+    <div class="pay"${tit==="Visão geral"?' data-sitdet="pend" role="button" tabindex="0"':""}><span>Pendente</span><b class="${o.pend>0?"neg":""}">${brl(o.pend)}</b></div>${bar(o,c)}${extra||""}</div>`;
   return `<section class="panel glass sit-panel"><h2>Situação de ${mLong(S.sel)}</h2><p class="desc">Cartões e despesas fixas são controlados separados; só aqui os dois se somam.</p><div class="sit">
     ${bloco("🏠","Despesas fixas",s0.fx,"var(--nec)",`<p class="muted small sit-n">${s0.fx.n?`${s0.fx.np} de ${s0.fx.n} pagas`:"Nenhuma neste mês"}</p>`,'data-lv="fixas" data-golanc="1"')}
     ${bloco("💳","Cartões",s0.ct,"var(--via)",`<p class="muted small sit-n">${s0.ct.n?`${s0.ct.np} de ${s0.ct.n} faturas pagas`:"Sem fatura neste mês"}</p>`)}
@@ -2594,6 +2620,7 @@ sheetIn.addEventListener("click",async e=>{
     if(F.mode==="bem"){F.nome=document.getElementById("bmNome").value;F.valor=document.getElementById("bmVal").value;F[sb.parentElement.dataset.seg]=sb.dataset.v;drawBem();return}
     if(F.mode==="ativo"){readAtivo();F[sb.parentElement.dataset.seg]=sb.dataset.v;drawAtivo();return}
     if(F.mode==="mov"){readMov();F[sb.parentElement.dataset.seg]=sb.dataset.v;drawMov();return}
+    if(F.mode==="sitdet"){F.sdf=sb.dataset.v;drawSitDet();return}
     if(F.mode==="fixa"){readFixa();const sg=sb.parentElement.dataset.seg;if(sg==="cat"||sg==="sub")F.catManual=true;F[sg]=sb.dataset.v;drawFixa();return}readForm();F[sb.parentElement.dataset.seg]=sb.dataset.v;drawSheet();return}
   const sim=e.target.closest("[data-sim]");if(sim){readForm();const n=parseInt(sim.dataset.sim);F.tipo=n===1?"avulso":"parcelado";F.parcelas=n;drawSheet();return}
   const pt2=e.target.closest("[data-pt]");if(pt2&&pt2.dataset.pid){S.pAtv={t:pt2.dataset.pt};document.getElementById("pAtvBox").innerHTML=periodoHTML(pt2.dataset.pid);return}
@@ -2602,6 +2629,10 @@ sheetIn.addEventListener("click",async e=>{
   const rv0=e.target.closest("[data-reinv]");if(rv0){reinvestir(rv0.dataset.reinv);return}
   const mvb=e.target.closest("[data-mov]");if(mvb){const id=F.id;openMov(mvb.dataset.mov,id);return}
   const dmv=e.target.closest("[data-delmov]");if(dmv){if(!confirm("Apagar este movimento?"))return;const aid=F.id;await delDoc("movimentos",dmv.dataset.delmov,S.movs,LS.movs);openAtivo(aid);return}
+  if(F&&F.mode==="sitdet"){const f0=F.sdf,volta=()=>openSitDet(f0);
+    const a1=e.target.closest("[data-sdfix]");if(a1){const id=a1.dataset.sdfix;navGo(volta,()=>openFixa(id));return}
+    const a2=e.target.closest("[data-sdit]");if(a2){const id=a2.dataset.sdit;navGo(volta,()=>openEdit(id));return}
+    const a3=e.target.closest("[data-sdcard]");if(a3){const k=a3.dataset.sdcard;closeSheet();S.tab="lanc";S.lancVista="mes";S.filtro=[k];S.fcat=[];S.fquem=[];S.busca="";render();window.scrollTo(0,0);return}}
   const sit=e.target.closest("[data-subit]");if(sit&&F&&F.mode==="subdet"){const volta={cat:F.cat,sub:F.sub},id=sit.dataset.subit;navGo(()=>openSubDet(volta.cat,volta.sub),()=>openEdit(id));return}
   const a=e.target.closest("[data-act]");if(!a)return;const act=a.dataset.act;
   if(act==="close")return closeSheet();
@@ -2688,6 +2719,7 @@ document.querySelector(".tabbar").addEventListener("click",e=>{
 function ddSet(v){S.ddOpen=v;document.querySelectorAll(".dd").forEach(d=>{const b=d.querySelector("[data-dd]"),o=b.dataset.dd===v;d.classList.toggle("open",o);b.setAttribute("aria-expanded",o)})}
 app.addEventListener("click",async e=>{
   const ddb=e.target.closest("[data-dd]");if(ddb){ddSet(S.ddOpen===ddb.dataset.dd?null:ddb.dataset.dd);return}
+  const sdg=e.target.closest("[data-sitdet]");if(sdg){openSitDet(sdg.dataset.sitdet);return}
   const sdt=e.target.closest("[data-subdet]");if(sdt){const [c,k]=sdt.dataset.subdet.split("|");openSubDet(c,k);return}
   const dzt=e.target.closest(".dzslice,.bucket[data-dzk]");if(dzt&&dzt.dataset.dzk!=="vazio"){const k=dzt.dataset.dzk;S.dz.pin=S.dz.pin===k?null:k;S.dz.hov=null;dzFocus();return}
   const ivm=e.target.closest("[data-invmodo]");if(ivm){S.invModo=ivm.dataset.invmodo;const b=document.getElementById("invBox");if(b)b.innerHTML=investidoHTML();return}
