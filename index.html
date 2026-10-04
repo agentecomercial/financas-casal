@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Finanças do Casal</title>
 <meta name="robots" content="noindex,nofollow">
-<meta name="fc-versao" content="933d2e06">
+<meta name="fc-versao" content="b3063235">
 <meta name="theme-color" content="#15103A">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -139,6 +139,9 @@ section.panel .desc{color:var(--muted);font-size:.84rem;margin:0 0 14px}
 .ring-c span{font-size:.74rem;color:var(--muted)}
 .bucket{padding:12px 0;border-top:1px solid var(--stroke)}
 .bucket .row{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.bucket .row[data-catdet]{cursor:pointer;border-radius:10px;margin:-4px -8px;padding:4px 8px;transition:background .15s}
+.bucket .row[data-catdet]:hover,.bucket .row[data-catdet]:focus-visible{background:var(--glass2);outline:none}
+.bucket .row[data-catdet] .nm::after{content:" ›";opacity:.45;font-weight:700}
 .bucket .nm{font-weight:700;display:flex;align-items:center;gap:8px}
 .dot{width:11px;height:11px;border-radius:4px;flex:none;display:inline-block;box-shadow:0 0 10px -1px currentColor}
 .track{height:8px;background:var(--glass2);border-radius:6px;margin-top:8px;overflow:hidden}
@@ -878,6 +881,25 @@ function drawSitDet(){const f=F.sdf,m=S.sel,d=monthData(m),hoje=todayStr(),venc=
     <div class="sd-tot" style="margin-top:12px"><span class="muted small">${mLong(m)} · ${n} ${n===1?"item":"itens"}</span><b class="${f==="pago"?"pos":f==="pend"&&tot?"neg":""}">${brl(tot)}</b></div>
     ${sec.map(([g,l])=>`<div class="group"><h3><span>${g}</span><span>${brl(l.reduce((a,x)=>a+x.v,0))}</span></h3>${l.map(x=>`<button class="item" ${x.attr}><span class="t"><span class="d">${esc(x.t)}</span><span class="meta">${x.meta}</span></span><span class="val">${brl(x.v)}</span></button>`).join("")}</div>`).join("")||`<p class="muted">${f==="pend"?"Nada pendente neste mês. 🎉":"Nada neste mês."}</p>`}
     <p class="muted small" style="margin:12px 0">Toque num item: a despesa fixa e a compra abrem para editar; a fatura abre os lançamentos do cartão.</p><button class="btn ghost" data-act="close">Fechar</button>`}
+/* Divisão da renda → título da categoria: todos os lançamentos do mês, por tipo (Investimentos: aportes e resgates do Patrimônio) */
+function openCatDet(cat){F={mode:"catdet",cat};drawCatDet();if(!sheet.classList.contains("open"))openSheet()}
+function drawCatDet(){const {cat}=F,m=S.sel,d=monthData(m),cfg=S.cfg,meta=CATS_ORC.includes(cat)?Math.round(cfg.renda*cfg.pct[cat]/100):0;
+  const origem=({it,k})=>ehFixa(it)?`🏠 fixa · ${S.pagFix[pagFixId(m,it.id)]?"pago":"pendente"}`:compromete(it)?`💳 ${esc(formaNome(it.forma))} · ${it.tipo==="fixo"?"mensal":it.tipo==="avulso"?"única":`parcela ${k}/${it.parcelas}`}`:`à vista · ${it.tipo==="avulso"?"única":it.tipo==="fixo"?"mensal":`parcela ${k}/${it.parcelas}`}`;
+  const item=x=>`<button class="item" data-cdit="${x.it.id}"><span class="dot" style="background:var(--${cat});color:var(--${cat})"></span><span class="t"><span class="d">${esc(x.it.desc)}</span><span class="meta">${origem(x)} · ${esc(x.it.quem||"")}</span></span><span class="val">${brl(x.v)}</span></button>`;
+  const l=d.lista.filter(x=>x.it.cat===cat).sort((a,b)=>b.v-a.v);let corpo="",tot=l.reduce((s,x)=>s+x.v,0),n=l.length;
+  if(cat==="inv"){const mv=Object.values(S.movs).filter(x=>x.data&&x.data.slice(0,7)===m&&((x.tipo==="aporte"&&!x.inicial)||x.tipo==="resgate")).sort((a,b)=>b.data.localeCompare(a.data));
+    tot=aportesMes(m);n=mv.length+l.length;
+    corpo=(mv.length?`<div class="group"><h3><span>Aportes e resgates</span><span>${brl(tot)}</span></h3>${mv.map(x=>`<button class="item" data-cdativo="${esc(x.ativoId||"")}"><span class="dot" style="background:var(--inv);color:var(--inv)"></span><span class="t"><span class="d">${esc((S.ativos[x.ativoId]||{}).nome||"Ativo")}</span><span class="meta">${x.tipo==="aporte"?"Aporte":"Resgate"} em ${fmtD(x.data)}${x.quem?" · "+esc(x.quem):""}</span></span><span class="val${x.tipo==="resgate"?" neg":""}">${x.tipo==="resgate"?"−":""}${brl(x.valor)}</span></button>`).join("")}</div>`:"")
+      +(l.length?`<div class="group"><h3><span>Lançados como gasto</span><span>${brl(l.reduce((s,x)=>s+x.v,0))}</span></h3>${l.map(item).join("")}</div>`:"")}
+  else if(SUBC[cat]){const por={};for(const x of l){const k=SUBC[cat][x.it.sub]?x.it.sub:"outros";(por[k]=por[k]||[]).push(x)}
+    corpo=Object.entries(por).sort((a,b)=>b[1].reduce((s,x)=>s+x.v,0)-a[1].reduce((s,x)=>s+x.v,0)).map(([k,xs])=>`<div class="group"><h3><span>${esc(SUBC[cat][k])}${SUB_SEM_META.includes(k)&&cat==="nec"?" · despesa fixa":""}</span><span>${brl(xs.reduce((s,x)=>s+x.v,0))}</span></h3>${xs.map(item).join("")}</div>`).join("")}
+  else corpo=l.length?`<div class="group">${l.map(item).join("")}</div>`:"";
+  const fx=l.filter(x=>ehFixa(x.it)).reduce((s,x)=>s+x.v,0);
+  sheetIn.innerHTML=`<div class="grab"></div><h2>${esc(CATS[cat].nome)}</h2>
+    <div class="sd-tot"><span class="muted small">${mLong(m)} · ${n} ${n===1?"item":"itens"}</span><b class="${meta&&tot>meta?"neg":""}">${brl(tot)}</b></div>
+    <p class="muted small" style="margin:0 0 8px">${meta?`Meta ${brl(meta)} (${cfg.pct[cat]}% da renda). ${cat==="inv"?(tot>=meta?"Cumprida.":`Faltam ${brl(meta-tot)} de aportes.`):tot>meta?`Passou ${brl(tot-meta)}.`:`Ainda cabem ${brl(meta-tot)}.`}`:cat==="srv"?"Custo da empresa, sem meta.":""}${fx?` Fixas ${brl(fx)} · variáveis ${brl(tot-fx)}.`:""}</p>
+    ${corpo||`<p class="muted">Nada em ${mLong(m)}.</p>`}
+    <p class="muted small" style="margin:12px 0">Toque num item para ver ou editar.</p><button class="btn ghost" data-act="close">Fechar</button>`}
 function telaSenha(pk,opt){opt=opt||{};S.travado=true;document.body.classList.add("travado");window.scrollTo(0,0);
   app.innerHTML=`<section class="panel glass lock"><h1>Finanças do Casal</h1>
     <p class="desc">${opt.recarregar?"Isto troca os dados deste aparelho pelos do site.":"Os dados deste site estão protegidos."} Digite a senha para carregá-los neste aparelho.</p>
@@ -2159,14 +2181,14 @@ function painel(){
     else if(c==="des"||c==="via"){const ps=d.porSubC[c]||{},tot=d.porCat[c]||0;const ks=Object.keys(SUBC[c]).filter(k=>ps[k]>0).sort((a,b)=>ps[b]-ps[a]);
       if(ks.length)subs=`<div class="subs">`+ks.map(k=>`<div class="subrow" data-subdet="${c}|${k}" role="button" tabindex="0" title="Ver os lançamentos"><span>${SUBC[c][k]}</span><span>${brl(ps[k])} <small>${tot?Math.round(ps[k]/tot*100)+"%":""}</small></span>
         <div class="track thin"><div class="fill" style="width:${tot?ps[k]/tot*100:0}%;background:var(--${c})"></div></div></div>`).join("")+`</div>`}
-    return `<div class="bucket"${c!=="inv"&&(d.porCat[c]||0)>0?` data-dzk="${c}" role="button" tabindex="0"`:""}><div class="row"><span class="nm"><span class="dot" style="background:var(--${c});color:var(--${c})"></span>${CATS[c].nome} <span class="muted small">${cfg.pct[c]}%</span></span><b>${brl(v)}</b></div>
+    return `<div class="bucket"${c!=="inv"&&(d.porCat[c]||0)>0?` data-dzk="${c}" role="button" tabindex="0"`:""}><div class="row" data-catdet="${c}" role="button" tabindex="0" title="Ver todos os lançamentos"><span class="nm"><span class="dot" style="background:var(--${c});color:var(--${c})"></span>${CATS[c].nome} <span class="muted small">${cfg.pct[c]}%</span></span><b>${brl(v)}</b></div>
       ${fix?`<div class="track split"><div class="fill" style="width:${pf}%;background:${cF}"></div><div class="fill fv" style="width:${Math.max(0,(ov?100:p)-pf)}%;background:${cV}"></div></div>`
         :`<div class="track"><div class="fill" style="width:${p}%;background:${ov?"var(--alert)":`linear-gradient(90deg,color-mix(in srgb,var(--${c}) 60%,transparent),var(--${c}))`}"></div></div>`}
       <div class="sub${ov?" over":""}">Meta ${brl(meta)}. ${sub} ${c==="inv"?"":cmp(v,prev.porCat[c]||0)}</div>${fix?`<div class="sub fxsplit"><i class="sq" style="background:${cF}"></i>Fixas ${brl(fix)} · <i class="sq lt" style="background:${cV}"></i>variáveis ${brl(Math.max(0,v-fix))}</div>`:""}${subs}</div>`}).join("");
   const vS=d.porCat.srv||0;
   const srvB=vS?(()=>{const fix=fixC.srv||0,pf=fix/vS*100,ps=d.porSubC.srv||{},ks=Object.keys(SUBC.srv).filter(k=>ps[k]>0).sort((a,b)=>ps[b]-ps[a]),lt="color-mix(in srgb,var(--srv) 45%,transparent)";
     const subs=ks.length?`<div class="subs">`+ks.map(k=>`<div class="subrow" data-subdet="srv|${k}" role="button" tabindex="0" title="Ver os lançamentos"><span>${SUBC.srv[k]}</span><span>${brl(ps[k])} <small>${Math.round(ps[k]/vS*100)}%</small></span><div class="track thin"><div class="fill" style="width:${ps[k]/vS*100}%;background:var(--srv)"></div></div></div>`).join("")+`</div>`:"";
-    return `<div class="bucket" data-dzk="srv" role="button" tabindex="0"><div class="row"><span class="nm"><span class="dot" style="background:var(--srv);color:var(--srv)"></span>${CATS.srv.nome} <span class="muted small">empresa</span></span><b>${brl(vS)}</b></div>
+    return `<div class="bucket" data-dzk="srv" role="button" tabindex="0"><div class="row" data-catdet="srv" role="button" tabindex="0" title="Ver todos os lançamentos"><span class="nm"><span class="dot" style="background:var(--srv);color:var(--srv)"></span>${CATS.srv.nome} <span class="muted small">empresa</span></span><b>${brl(vS)}</b></div>
       ${fix?`<div class="track split"><div class="fill" style="width:${pf}%;background:var(--srv)"></div><div class="fill fv" style="width:${100-pf}%;background:${lt}"></div></div>`:`<div class="track"><div class="fill" style="width:100%;background:${lt}"></div></div>`}
       <div class="sub">Sem meta: custo da empresa, fora da regra ${cfg.pct.nec}/${cfg.pct.des}/${cfg.pct.inv}/${cfg.pct.via}. ${cmp(vS,prev.porCat.srv||0)}</div>
       ${fix?`<div class="sub fxsplit"><i class="sq" style="background:var(--srv)"></i>Fixas ${brl(fix)} · <i class="sq lt" style="background:${lt}"></i>variáveis ${brl(Math.max(0,vS-fix))}</div>`:""}${subs}</div>`})():"";
@@ -2629,6 +2651,9 @@ sheetIn.addEventListener("click",async e=>{
   const rv0=e.target.closest("[data-reinv]");if(rv0){reinvestir(rv0.dataset.reinv);return}
   const mvb=e.target.closest("[data-mov]");if(mvb){const id=F.id;openMov(mvb.dataset.mov,id);return}
   const dmv=e.target.closest("[data-delmov]");if(dmv){if(!confirm("Apagar este movimento?"))return;const aid=F.id;await delDoc("movimentos",dmv.dataset.delmov,S.movs,LS.movs);openAtivo(aid);return}
+  if(F&&F.mode==="catdet"){const c0=F.cat,volta=()=>openCatDet(c0);
+    const b1=e.target.closest("[data-cdit]");if(b1){const id=b1.dataset.cdit;navGo(volta,()=>openEdit(id));return}
+    const b2=e.target.closest("[data-cdativo]");if(b2&&b2.dataset.cdativo&&S.ativos[b2.dataset.cdativo]){const id=b2.dataset.cdativo;navGo(volta,()=>openAtivo(id));return}}
   if(F&&F.mode==="sitdet"){const f0=F.sdf,volta=()=>openSitDet(f0);
     const a1=e.target.closest("[data-sdfix]");if(a1){const id=a1.dataset.sdfix;navGo(volta,()=>openFixa(id));return}
     const a2=e.target.closest("[data-sdit]");if(a2){const id=a2.dataset.sdit;navGo(volta,()=>openEdit(id));return}
@@ -2719,6 +2744,7 @@ document.querySelector(".tabbar").addEventListener("click",e=>{
 function ddSet(v){S.ddOpen=v;document.querySelectorAll(".dd").forEach(d=>{const b=d.querySelector("[data-dd]"),o=b.dataset.dd===v;d.classList.toggle("open",o);b.setAttribute("aria-expanded",o)})}
 app.addEventListener("click",async e=>{
   const ddb=e.target.closest("[data-dd]");if(ddb){ddSet(S.ddOpen===ddb.dataset.dd?null:ddb.dataset.dd);return}
+  const cdt=e.target.closest("[data-catdet]");if(cdt){openCatDet(cdt.dataset.catdet);return}
   const sdg=e.target.closest("[data-sitdet]");if(sdg){openSitDet(sdg.dataset.sitdet);return}
   const sdt=e.target.closest("[data-subdet]");if(sdt){const [c,k]=sdt.dataset.subdet.split("|");openSubDet(c,k);return}
   const dzt=e.target.closest(".dzslice,.bucket[data-dzk]");if(dzt&&dzt.dataset.dzk!=="vazio"){const k=dzt.dataset.dzk;S.dz.pin=S.dz.pin===k?null:k;S.dz.hov=null;dzFocus();return}
