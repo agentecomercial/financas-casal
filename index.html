@@ -802,7 +802,8 @@ function loadLocal(){S.items=lsGet(LS.items)||{};S.pag=lsGet(LS.pag)||{};S.pagFi
 
 const SEED=null;function seedIfEmpty(){}
 /* backup completo em JSON (funciona fora do Claude) */
-function backupJSON(){const o={versao:1,gerado:new Date().toISOString(),cfg:S.cfg,items:S.items,pag:S.pag,pagFix:S.pagFix,acertos:S.acertos,metas:S.metas,ativos:S.ativos,movs:S.movs,bens:S.bens,darf:S.darf};
+function montarBackup(){return {versao:1,gerado:new Date().toISOString(),cfg:S.cfg,items:S.items,pag:S.pag,pagFix:S.pagFix,acertos:S.acertos,metas:S.metas,ativos:S.ativos,movs:S.movs,bens:S.bens,darf:S.darf}}
+function backupJSON(){const o=montarBackup();
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(o,null,1)],{type:"application/json"}));a.download="financas-casal-backup-"+todayStr()+".json";document.body.appendChild(a);a.click();a.remove();toast("Backup baixado")}
 function gravarBackupLocal(o){lsSet(LS.items,o.items||{});lsSet(LS.pag,o.pag||{});lsSet(LS.pagFix,o.pagFix||{});lsSet(LS.acertos,o.acertos||{});lsSet(LS.metas,o.metas||{});lsSet(LS.ativos,o.ativos||{});lsSet(LS.movs,o.movs||{});lsSet(LS.bens,o.bens||{});lsSet(LS.darf,o.darf||{});lsSet(LS.cfg,o.cfg||{})}
 /* ---------- versão online (GitHub Pages): os dados de partida vêm em dados.enc.json, cifrados (PBKDF2-SHA256 + AES-256-GCM, gerado pelo Cifrar-Dados.js) ---------- */
@@ -813,6 +814,26 @@ const b64u8=t=>Uint8Array.from(atob(t),c=>c.charCodeAt(0));
 async function decifrarPacote(pk,senha){const base=await crypto.subtle.importKey("raw",new TextEncoder().encode(senha),"PBKDF2",false,["deriveKey"]);
   const k=await crypto.subtle.deriveKey({name:"PBKDF2",salt:b64u8(pk.salt),iterations:pk.iter,hash:"SHA-256"},base,{name:"AES-GCM",length:256},false,["decrypt"]);
   return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:b64u8(pk.iv)},k,b64u8(pk.ct))))}
+const u8b64=u=>{let t="";for(let i=0;i<u.length;i+=32768)t+=String.fromCharCode.apply(null,u.subarray(i,i+32768));return btoa(t)};
+async function cifrarPacote(obj,senha){const iter=1000000,salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));
+  const base=await crypto.subtle.importKey("raw",new TextEncoder().encode(senha),"PBKDF2",false,["deriveKey"]);
+  const k=await crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:iter,hash:"SHA-256"},base,{name:"AES-GCM",length:256},false,["encrypt"]);
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},k,new TextEncoder().encode(JSON.stringify(obj))));
+  return {v:1,kdf:"PBKDF2-SHA256",iter,salt:u8b64(salt),iv:u8b64(iv),ct:u8b64(ct)}}
+/* Ajustes → Senha do site: confere a atual, cifra os dados deste aparelho com a nova e baixa o dados.enc.json (o Publicar-Site.ps1 -Push pega da pasta Downloads) */
+async function mudarSenha(btn){const g=id=>(document.getElementById(id)||{}).value||"",at=g("snAt"),n1=g("snN1"),n2=g("snN2"),msg=document.getElementById("snMsg");
+  const diz=(t,ok)=>{msg.textContent=t;msg.className="small "+(ok?"pos":"neg")};
+  if(n1.length<12)return diz("A senha nova precisa de pelo menos 12 caracteres (o ideal é uma frase).");
+  if(n1!==n2)return diz("A senha nova e a confirmação não conferem.");
+  btn.disabled=true;const rot=btn.textContent;btn.textContent="Conferindo...";
+  try{const pk=await lerPacote();
+    if(pk){let ok=null;try{ok=await decifrarPacote(pk,at)}catch(e){ok=null}if(!ok)return diz("A senha atual não confere com a do site.")}
+    if(at&&at===n1)return diz("A senha nova é igual à atual.");
+    btn.textContent="Cifrando...";const novo=await cifrarPacote(montarBackup(),n1);
+    const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(novo)],{type:"application/json"}));a.download="dados.enc.json";document.body.appendChild(a);a.click();a.remove();
+    ["snAt","snN1","snN2"].forEach(id=>{const e=document.getElementById(id);if(e)e.value=""});
+    diz("Pronto: dados.enc.json baixado com a senha nova. Para valer no site, rode Publicar-Site.ps1 -Push (ou peça no chat: publicar o Finanças). Até lá, o site continua com a senha antiga.",true)}
+  finally{btn.disabled=false;btn.textContent=rot}}
 function telaSenha(pk,opt){opt=opt||{};S.travado=true;document.body.classList.add("travado");window.scrollTo(0,0);
   app.innerHTML=`<section class="panel glass lock"><h1>Finanças do Casal</h1>
     <p class="desc">${opt.recarregar?"Isto troca os dados deste aparelho pelos do site.":"Os dados deste site estão protegidos."} Digite a senha para carregá-los neste aparelho.</p>
@@ -2399,6 +2420,12 @@ function ajustes(){
   <section class="panel glass"><h2>Importar do banco</h2><p class="desc">Arquivo OFX ou CSV exportado do banco. Cada linha vira uma compra única.</p>
     <div class="field"><label for="impForma">Lançar como</label><div class="seg" data-seg="impForma">${cardIds().map(k=>`<button type="button" class="${(S.impForma||cardIds()[0])===k?"on":""}" data-v="${k}">${esc(formaNome(k))}</button>`).join("")}</div></div>
     <input type="file" id="impFile" accept=".ofx,.csv,.txt" class="file"></section>
+  <section class="panel glass" id="snBox"><h2>Senha do site</h2><p class="desc">Troca a senha que protege os dados publicados. O pacote novo leva os dados deste aparelho.</p>
+    <div class="field"><label for="snAt">Senha atual</label><input id="snAt" type="password" autocomplete="current-password"></div>
+    <div class="field"><label for="snN1">Senha nova <span class="muted small">(12 caracteres ou mais)</span></label><input id="snN1" type="password" autocomplete="new-password"></div>
+    <div class="field"><label for="snN2">Repita a senha nova</label><input id="snN2" type="password" autocomplete="new-password"></div>
+    <button class="btn" data-act="mudarSenha">Mudar senha</button><p id="snMsg" class="small" style="margin:10px 0 0"></p>
+    <p class="muted small" style="margin:8px 0 0">Os aparelhos já desbloqueados continuam funcionando. A senha nova só vale para carregar os dados do site.</p></section>
   <section class="panel glass"><h2>Backup</h2><p class="desc">Cópia completa dos dados em um arquivo JSON. Serve para levar os dados entre o navegador e o app Claude.</p>
     <button class="btn" data-act="backup">Baixar backup</button>
     <label class="btn ghost filebtn">Restaurar backup<input type="file" id="bkFile" accept=".json,application/json" hidden></label>
@@ -2650,6 +2677,7 @@ app.addEventListener("click",async e=>{
     else if(act==="export")exportCSV();
     else if(act==="backup")backupJSON();
     else if(act==="carregarSite")carregarDoSite();
+    else if(act==="mudarSenha")mudarSenha(a);
     else if(act==="pjLimpar")setProj("over",{});
     else if(act==="cotNow")pedirAtualizacao();
     else if(act==="cotCancel"){if(S.cotWait)clearInterval(S.cotWait.iv);S.cotWait=null;render()}
