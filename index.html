@@ -269,7 +269,8 @@ button.pay.fx-link b{color:var(--nec)}
 @media (max-width:820px){.sit{grid-template-columns:1fr}}
 .alert.warn{background:color-mix(in srgb,var(--gold) 16%,transparent);color:var(--gold);border-color:color-mix(in srgb,var(--gold) 35%,transparent)}
 .cardcfg{border-top:1px solid var(--stroke);padding-top:12px;margin-top:4px}
-body.full .tabbar{display:none}
+body.full .tabbar,body.travado .tabbar{display:none}
+body.travado main{margin-left:auto!important;margin-right:auto!important;max-width:520px!important;padding-left:16px;padding-right:16px}
 .fs{min-height:calc(100vh - 40px);display:flex;flex-direction:column;justify-content:center;text-align:center;cursor:pointer}
 .fs h1{font-weight:600;font-size:1.6rem;margin:0}
 #undo{background:none;border:1px solid var(--btnink);color:inherit;border-radius:999px;padding:3px 10px;margin-left:8px;font-weight:700}
@@ -812,7 +813,7 @@ const b64u8=t=>Uint8Array.from(atob(t),c=>c.charCodeAt(0));
 async function decifrarPacote(pk,senha){const base=await crypto.subtle.importKey("raw",new TextEncoder().encode(senha),"PBKDF2",false,["deriveKey"]);
   const k=await crypto.subtle.deriveKey({name:"PBKDF2",salt:b64u8(pk.salt),iterations:pk.iter,hash:"SHA-256"},base,{name:"AES-GCM",length:256},false,["decrypt"]);
   return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:b64u8(pk.iv)},k,b64u8(pk.ct))))}
-function telaSenha(pk,opt){opt=opt||{};S.travado=true;
+function telaSenha(pk,opt){opt=opt||{};S.travado=true;document.body.classList.add("travado");window.scrollTo(0,0);
   app.innerHTML=`<section class="panel glass lock"><h1>Finanças do Casal</h1>
     <p class="desc">${opt.recarregar?"Isto troca os dados deste aparelho pelos do site.":"Os dados deste site estão protegidos."} Digite a senha para carregá-los neste aparelho.</p>
     <form id="lockF" autocomplete="off"><div class="field"><label for="lockP">Senha</label><input id="lockP" type="password" autocomplete="current-password"></div>
@@ -1895,6 +1896,7 @@ document.addEventListener("keydown",e=>{
 S.order=[];S.intro=true;
 function render(){
   if(S.travado)return;
+  document.body.classList.remove("travado");
   if(!S.sel)S.sel=defaultMonth();
   const decks=cardIds().concat(["ultima"]);S.order=S.order.filter(x=>decks.includes(x));for(const d of decks)if(!S.order.includes(d))S.order.push(d);
   document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on",b.dataset.tab===S.tab));
@@ -2799,7 +2801,7 @@ async function migrarSubs(){try{if(localStorage.getItem("fc_mig_subs"))return}ca
   try{localStorage.setItem("fc_mig_subs","1")}catch(e){}if(n)toast(`${n} ${n===1?"lançamento ganhou":"lançamentos ganharam"} subtipo automaticamente`)}
 function migrarCom(){let n=0;for(const it of Object.values(S.items))if(it.cat==="com"){it.cat="srv";it.sub="comercial";n++}if(n&&S.mode!=="db")lsSet(LS.items,S.items)}
 applyTheme();
-(async()=>{const precisa=ONLINE&&!temDadosLocais();if(precisa)S.travado=true;const pk=precisa?await lerPacote():null;if(pk){telaSenha(pk);return}
+(async()=>{const precisa=ONLINE&&!temDadosLocais();if(precisa){S.travado=true;document.body.classList.add("travado")}const pk=precisa?await lerPacote():null;if(pk){telaSenha(pk);return}
   S.travado=false;seedIfEmpty();loadLocal();migrarCom();render();setTimeout(()=>aplicarArquivoCotacoes(),300);setTimeout(migrarSubs,700)})();
 (async()=>{
   let db=null;
