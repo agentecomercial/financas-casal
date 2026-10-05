@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Finanças do Casal</title>
 <meta name="robots" content="noindex,nofollow">
-<meta name="fc-versao" content="b3063235">
+<meta name="fc-versao" content="5fb3ed76">
 <meta name="theme-color" content="#15103A">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -247,6 +247,13 @@ section.panel .desc{color:var(--muted);font-size:.84rem;margin:0 0 14px}
 .tag-end.foto{background:var(--glass2);color:var(--muted)}
 .tag-end.off{background:var(--alertbg);color:var(--alert)}
 .lv-sw{max-width:460px;margin:0 0 16px}
+/* entrada da Central de FIIs: uma prévia da atmosfera do módulo */
+.fii-entry{display:flex;align-items:center;gap:16px;margin:14px 0 18px;padding:16px 20px;border-radius:20px;text-decoration:none;color:#EEE8DC;background:radial-gradient(500px 160px at 85% 0%,rgba(214,190,138,.22),transparent 60%),linear-gradient(135deg,#0b0e13,#05070a);border:1px solid rgba(214,190,138,.28);box-shadow:0 18px 40px -22px rgba(0,0,0,.7);transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s}
+.fii-entry:hover{transform:translateY(-2px);box-shadow:0 24px 50px -20px rgba(214,190,138,.35)}
+.fii-entry .fe-mono{flex:0 0 42px;height:42px;border-radius:50%;display:grid;place-items:center;border:1px solid rgba(214,190,138,.5);font-family:"Fraunces",Georgia,serif;font-size:1.3rem;color:#F2E3BD;background:radial-gradient(circle at 30% 25%,rgba(242,227,189,.25),transparent 60%)}
+.fii-entry .fe-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.fii-entry .fe-t b{font-family:"Fraunces",Georgia,serif;font-size:1.15rem;font-weight:600}.fii-entry .fe-t small{color:#A9A398;font-size:.8rem}
+.fii-entry .fe-go{flex:0 0 auto;font-weight:700;font-size:.85rem;color:#1b150a;background:linear-gradient(180deg,#F2E3BD,#D6BE8A);padding:8px 14px;border-radius:999px}
+@media (max-width:640px){.fii-entry .fe-go{display:none}}
 .lock{max-width:440px;margin:12vh auto 0}.lock h1{font-family:"Fraunces",Georgia,serif;font-weight:600;margin:0 0 6px}.lock form{margin:16px 0 8px}.lock .btn+.btn{margin-top:8px}
 .item.fx-off{opacity:.6}
 .item .fx-nota{display:block;color:var(--gold);font-weight:600}
@@ -1214,7 +1221,8 @@ function patrimonio(){
   <div class="headline"><p class="lbl">Investido hoje</p><p class="big" data-v="${c.saldo}">${brl(c.saldo)}</p>
     ${sub==="resumo"?(()=>{const pm=periodo(perRange({t:"max"})[0],todayStr());return `<div class="stats"><div><span>Rendimento total</span><b class="${pm.rend>=0?"pos":"neg"}">${pm.rend>=0?"+":"−"}${brl(Math.abs(pm.rend))}</b><small>${pm.ent?pctf(pm.rend/pm.ent*100)+" sobre as entradas":""}</small></div><div><span>Proventos recebidos</span><b class="pos">${brl(c.prov)}</b></div></div>
     <div class="stats"><div><span>Custo para o IR</span><b>${brl(c.aplicado)}</b></div><div><span>Líquido de IR estimado</span><b>${brl(c.liq)}</b></div></div>`})():""}</div></div>
-  <div class="chips ptabs">${tabs}</div>`;
+  <div class="chips ptabs">${tabs}</div>
+  ${(()=>{const n=Object.values(S.ativos).filter(a=>a.tipo==="fii").length;return `<a class="fii-entry" href="fiis/index.html"><span class="fe-mono">F</span><span class="fe-t"><b>Central de FIIs</b><small>Mapa 3D do mercado, rankings, simulador e sua carteira de fundos imobiliários${n?` · ${n} ${n===1?"FII":"FIIs"} no seu Patrimônio`:""}</small></span><span class="fe-go">Entrar →</span></a>`})()}`;
   return head+`<div class="dgrid">`+(sub==="resumo"?pResumo(c):sub==="ativos"?pAtivos(c):sub==="renda"?pRenda(c):pPlanos(c))+`</div>`;
 }
 function pResumo(c){const hoje=todayStr(),cur=mkey(new Date()),cfg=S.cfg;
@@ -2923,6 +2931,7 @@ async function checarVersao(){if(!ONLINE||VERSAO==="local")return;const v=await 
   if(F||S.travado&&document.getElementById("lockP")&&document.getElementById("lockP").value){toast("Versão nova do app publicada. Ela entra ao fechar esta tela.");return}
   try{if(sessionStorage.getItem("fc_recarregou")===v)return;sessionStorage.setItem("fc_recarregou",v)}catch(e){}location.replace(location.pathname+"?v="+encodeURIComponent(v))}
 if(ONLINE){setTimeout(checarVersao,1500);setInterval(checarVersao,5*60000);document.addEventListener("visibilitychange",()=>{if(!document.hidden)checarVersao()})}
+if(location.hash==="#patri")S.tab="patri";
 applyTheme();
 (async()=>{const precisa=ONLINE&&!temDadosLocais();if(precisa){S.travado=true;document.body.classList.add("travado")}const pk=precisa?await lerPacote():null;if(pk){telaSenha(pk);return}
   S.travado=false;seedIfEmpty();loadLocal();migrarCom();render();setTimeout(()=>aplicarArquivoCotacoes(),300);setTimeout(migrarSubs,700)})();

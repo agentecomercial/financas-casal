@@ -15,10 +15,13 @@ jobs:
         continue-on-error: true   # o Yahoo às vezes recusa IPs de servidor; tenta de novo no próximo dia útil
         shell: pwsh
         run: ./Atualizar-Cotacoes.ps1
-      - name: Publicar cotacoes.js
-        if: steps.busca.outcome == 'success'
+      - name: Atualizar a base da Central de FIIs (CVM + Yahoo)
+        id: fiis
+        continue-on-error: true
+        run: node fiis/Atualizar-FIIs.js
+      - name: Publicar cotacoes.js e fiis/fiis.js
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add cotacoes.js
-          git diff --cached --quiet || (git commit -m "Cotações: atualização automática" && git push)
+          git add cotacoes.js fiis/fiis.js
+          git diff --cached --quiet || (git commit -m "Cotações e base de FIIs: atualização automática" && git push)
