@@ -43,7 +43,7 @@ main{max-width:1380px;margin:0 auto;padding:28px 24px 90px}
 /* transições entre telas */
 ::view-transition-old(root){animation:vtOut .35s var(--ease) both}::view-transition-new(root){animation:vtIn .55s var(--ease) both}
 @keyframes vtOut{to{opacity:0;filter:blur(6px);transform:scale(.985)}}@keyframes vtIn{from{opacity:0;filter:blur(8px);transform:scale(1.015)}}
-.view>*{animation:rise .7s var(--ease) both}.view>*:nth-child(2){animation-delay:.06s}.view>*:nth-child(3){animation-delay:.12s}.view>*:nth-child(4){animation-delay:.18s}.view>*:nth-child(5){animation-delay:.24s}
+.view>*{animation:rise .7s var(--ease) backwards} /* backwards: ao terminar não sobra transform, que prenderia o position:fixed da tela cheia */.view>*:nth-child(2){animation-delay:.06s}.view>*:nth-child(3){animation-delay:.12s}.view>*:nth-child(4){animation-delay:.18s}.view>*:nth-child(5){animation-delay:.24s}
 @keyframes rise{from{opacity:0;transform:translateY(14px)}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 /* tipografia de seção */
@@ -198,6 +198,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
 
 /* tela cheia da superfície de cenários */
 .stage .xp{position:absolute;top:16px;right:16px;z-index:3;font-size:1rem}
+.stage .hud{right:66px}
 .stage.full{position:fixed!important;inset:0;z-index:200;height:100vh!important;height:100dvh!important;border-radius:0;margin:0!important;border:0;background:radial-gradient(1200px 700px at 70% 0%,rgba(214,190,138,.08),transparent 60%),#05070A}
 body.noscroll{overflow:hidden}
 .dock{display:none}
@@ -206,8 +207,8 @@ body.noscroll{overflow:hidden}
 .dock .dres b{display:block;font-family:"Cormorant Garamond",serif;font-size:1.5rem;font-weight:500;color:var(--champ2)}
 .stage.full .hud{top:22px}
 @media (max-width:760px){.stage.full .dock{bottom:64px;padding:12px 14px}.stage.full .hint{display:none}}
-html.vt-sup::view-transition-old(root),html.vt-sup::view-transition-new(root){animation:none}
-::view-transition-group(sup){animation-duration:.65s;animation-timing-function:cubic-bezier(.2,.8,.2,1)}
+html.vt-palco::view-transition-old(root),html.vt-palco::view-transition-new(root){animation:none}
+::view-transition-group(palco){animation-duration:.65s;animation-timing-function:cubic-bezier(.2,.8,.2,1)}
 /* faixa de rendimentos da ficha */
 .yband{display:grid;grid-template-columns:1fr 1fr 1.1fr;gap:1px;background:var(--edge);border-radius:16px;overflow:hidden;margin-top:20px}
 .yband>div{background:linear-gradient(180deg,rgba(70,194,166,.06),#090c10 70%);padding:16px 18px}

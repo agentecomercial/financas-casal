@@ -7,6 +7,14 @@ const go = (v, arg) => { location.hash = arg ? v + "/" + arg : v };
 const ctrls = (id, persp, ini) => `<div class="ctrl"><div class="seg" data-persp="${id}">${persp.map(([k, t]) => `<button data-k="${k}" class="${k === ini ? "on" : ""}">${t}</button>`).join("")}</div>
   <button class="ic" data-zoom="${id}" data-f=".78" title="Aproximar" aria-label="Aproximar">+</button><button class="ic" data-zoom="${id}" data-f="1.28" title="Afastar" aria-label="Afastar">−</button>
   ${TOQUE ? `<button class="ic" data-giro="${id}" title="Girar com o dedo" aria-label="Girar com o dedo">⟲</button>` : ""}</div>`;
+/* tela cheia: qualquer palco 3D com este botão vira tela inteira (e volta) */
+const xp = () => `<button class="ic xp" data-full title="Abrir em tela cheia (Esc para sair)" aria-label="Abrir em tela cheia">⛶</button>`;
+function cheia(st, on) { const bt = st.querySelector("[data-full]"); const run = () => { st.classList.toggle("full", on); document.body.classList.toggle("noscroll", on);
+    if (bt) { bt.textContent = on ? "✕" : "⛶"; bt.title = on ? "Sair da tela cheia (Esc)" : "Abrir em tela cheia (Esc para sair)"; bt.setAttribute("aria-label", bt.title) } };
+  if (document.startViewTransition && !RM) { document.documentElement.classList.add("vt-palco"); st.style.viewTransitionName = "palco"; const tr = document.startViewTransition(run); tr.ready.catch(() => { });
+    tr.finished.catch(() => { }).then(() => { st.style.viewTransitionName = ""; document.documentElement.classList.remove("vt-palco") }) } else run() }
+function ligarCheia() { document.querySelectorAll(".stage [data-full]").forEach(b => { const st = b.closest(".stage"); b.onclick = e => { e.stopPropagation(); cheia(st, !st.classList.contains("full")) } }) }
+const sairCheia = () => { const st = document.querySelector(".stage.full"); if (st) { cheia(st, false); return true } return false };
 const dica = t => `<div class="hint">${TOQUE ? "Toque nos pontos para ver os dados · ⟲ libera o giro" : t || "Arraste para girar · duplo clique aproxima · passe o mouse nos pontos"}</div>`;
 function ligarCtrls(id) { const api = API[id]; if (!api) return;
   document.querySelectorAll(`[data-persp="${id}"] button`).forEach(b => b.onclick = () => { document.querySelectorAll(`[data-persp="${id}"] button`).forEach(x => x.classList.toggle("on", x === b)); api.persp && api.persp(b.dataset.k) });
@@ -28,14 +36,14 @@ VIEWS.painel = () => { const c = carteira(), temC = c.length > 0; if (S.fonte ==
     <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end"><div class="seg" id="per">${[[6, "6M"], [12, "12M"], [24, "24M"]].map(([v, t]) => `<button data-v="${v}" class="${S.per === v ? "on" : ""}">${t}</button>`).join("")}</div>
       ${temC ? `<div class="seg" id="fonte"><button data-v="cart" class="${S.fonte === "cart" ? "on" : ""}">Minha carteira</button><button data-v="merc" class="${S.fonte === "merc" ? "on" : ""}">Mercado</button></div>` : ""}
       <span class="cnt" id="heroS">${S.fonte === "cart" ? T("calc", "cotas × fechamento do mês") : T("sim", "simulação sobre dados reais")}</span></div></div>
-    ${ctrls("hero", [["perspectiva", "Perspectiva"], ["frente", "Frontal"], ["lado", "Lateral"], ["topo", "Topo"]], "perspectiva")}${dica()}</section>
+    ${xp()}${ctrls("hero", [["perspectiva", "Perspectiva"], ["frente", "Frontal"], ["lado", "Lateral"], ["topo", "Topo"]], "perspectiva")}${dica()}</section>
   <div class="grid g4" style="margin-top:18px">${kp.map(([l, v, f, s], i) => `<div class="glass tilt kpi"><div class="lbl">${l}</div><div class="v num" data-k="${i}">${f(0)}</div><small>${s}</small></div>`).join("")}</div>
   <section style="margin-top:34px"><p class="eyebrow">Mercado</p><h2 class="ttl" style="font-size:2rem">Mapa tridimensional</h2>
     <p class="lead">Cada esfera é um FII: <b>P/VP</b> na largura, <b>DY 12 meses</b> na altura e a terceira dimensão à sua escolha. Tamanho = patrimônio. O plano verde marca P/VP = 1. Clique numa esfera para voar até ela e abrir a ficha.</p>
     <div class="toolbar"><div class="seg" id="zk">${Object.entries(EIXOZ).map(([k, v]) => `<button data-v="${k}" class="${S.zk === k ? "on" : ""}">${v[0]}</button>`).join("")}</div>
       ${TIPOS.map(t => `<button class="pill${S.mapaTipos.includes(t) ? " on" : ""}" data-mt="${t}">${tp(t)}</button>`).join("")}
       <label class="switch" style="margin-left:auto"><input type="checkbox" id="mtodos"${S.mapaTodos ? " checked" : ""}> Incluir fundos de baixa liquidez</label></div>
-    <div class="glass stage" id="st-mapa" style="height:600px">${ctrls("mapa", [["perspectiva", "Perspectiva"], ["frente", "P/VP × DY"], ["lado", "DY × " + EIXOZ[S.zk][0]], ["topo", "Topo"]], "perspectiva")}${dica()}</div>
+    <div class="glass stage" id="st-mapa" style="height:600px">${xp()}${ctrls("mapa", [["perspectiva", "Perspectiva"], ["frente", "P/VP × DY"], ["lado", "DY × " + EIXOZ[S.zk][0]], ["topo", "Topo"]], "perspectiva")}${dica()}</div>
     <p class="foot">${T("real")} cotação, patrimônio e cotistas · ${T("calc")} DY 12m, P/VP, liquidez e retorno. Valores fora das faixas do mapa ficam encostados nas bordas.</p></section>
   <section class="grid g3" style="margin-top:26px">${mini("Maior liquidez", F.slice().sort((a, b) => (b.liq || 0) - (a.liq || 0)).slice(0, 5), f => big(f.liq) + "/dia")}${mini("Mais cotistas", F.slice().sort((a, b) => (b.cotistas || 0) - (a.cotistas || 0)).slice(0, 5), f => int(f.cotistas))}${mini("Maior patrimônio", F.slice().sort((a, b) => (b.pl || 0) - (a.pl || 0)).slice(0, 5), f => big(f.pl))}</section>` };
 const mini = (t, l, fv) => `<div class="glass tilt"><div class="pad" style="padding-bottom:6px"><div class="lbl">${t}</div></div><ul class="rlist">${l.map((f, i) => `<li data-tk="${f.t}"><span class="n">${i + 1}</span><span><span class="tkb">${f.t}</span><span class="nm">${esc(f.nm)}</span></span><b>${fv(f)}</b></li>`).join("")}</ul></div>`;
@@ -127,7 +135,7 @@ VIEWS.fii = () => { const f = BY[(S.arg || "").toUpperCase()]; if (!f) return `<
         ["Rend. 12m/cota", brl(f.div12, 4), "calc"], ["DY mês CVM", pct(f.dyMes), "real"], ["Retorno 12m", f.ret12 == null ? "—" : `<span class="${f.ret12 >= 0 ? "pos" : "neg"}">${pct(f.ret12, 1)}</span>`, "calc"]]
         .map(([k, v, t]) => `<div class="fact"><div class="lbl">${k} ${T(t)}</div><b class="num">${v}</b></div>`).join("")}</div></section>
     <section class="glass stage" id="st-ficha" style="height:auto;min-height:470px"><div class="hud"><div><div class="lbl">Rendimentos × cotação</div><div class="cnt" style="margin-top:4px">24 meses · Yahoo Finance · ${T("real")}</div></div></div>
-      ${ctrls("ficha", [["perspectiva", "Perspectiva"], ["frente", "Frontal"], ["topo", "Topo"]], "perspectiva")}${dica("Arraste para girar · passe o mouse nas colunas")}</section></div>
+      ${xp()}${ctrls("ficha", [["perspectiva", "Perspectiva"], ["frente", "Frontal"], ["topo", "Topo"]], "perspectiva")}${dica("Arraste para girar · passe o mouse nas colunas")}</section></div>
   <div class="grid g2" style="margin-top:18px"><section class="glass pad"><div class="lbl" style="margin-bottom:14px">Cadastro · CVM, referência ${mes(f.ref)}</div><dl class="dl">
       <dt>Nome</dt><dd>${esc(f.nome)}</dd><dt>CNPJ</dt><dd>${esc(f.cnpj)}</dd><dt>Administrador</dt><dd>${esc(f.adm)}</dd><dt>Gestão</dt><dd>${esc(f.gestao || "—")}</dd><dt>Início</dt><dd>${dt(f.inicio)}</dd>
       <dt>Público-alvo</dt><dd>${esc((f.publico || "").toLowerCase())}</dd><dt>Cotas emitidas</dt><dd>${int(f.cotas)}</dd><dt>DY do mês (CVM)</dt><dd>${pct(f.dyMes, 3)}</dd><dt>Taxa adm. no mês</dt><dd>${pct(f.tx, 3)}</dd><dt>Segmento (CVM)</dt><dd>${esc(f.segCvm || "—")}</dd></dl></section>
@@ -169,7 +177,7 @@ VIEWS.simulador = () => { if (!S.sim || (S.arg && S.sim.t !== S.arg.toUpperCase(
       <div class="hl"><span class="lbl">Patrimônio ao final</span><b class="num" id="r5">—</b></div><div class="hl"><span class="lbl">Renda mensal ao final</span><b class="num" id="r6">—</b></div></div>
       <p class="note" id="rnota"></p></section></div>
   <section class="glass stage" id="st-sup" style="height:560px;margin-top:18px"><div class="hud"><div><div class="lbl">Superfície de cenários ${T("sim")}</div><div class="cnt" style="margin-top:4px;max-width:420px">Patrimônio projetado para cada combinação de aporte mensal (R$ 0 a R$ 3.000) e prazo (1 a 30 anos). A esfera branca é o seu cenário. Clique na superfície para aplicar outro.</div></div></div>
-    <button class="ic xp" id="supFull" title="Abrir em tela cheia (Esc para sair)" aria-label="Abrir em tela cheia">⛶</button>
+    ${xp()}
     <div class="dock" id="supDock"><div class="lbl" style="color:var(--champ)">Seu cenário ${T("sim")}</div>
       ${rng("dap", "Aporte mensal", s.aporte, 0, 5000, 50, v => brl(+v, 0))}${rng("danos", "Prazo", s.anos, 1, 40, 1, v => v + (v == 1 ? " ano" : " anos"))}${rng("ddy", "DY anual usado", s.dy, 0, 25, .1, v => pct(+v, 1))}
       <div class="dres"><div><span class="lbl">Patrimônio ao final</span><b class="num" id="d5">—</b></div><div><span class="lbl">Renda/mês ao final</span><b class="num" id="d6" style="color:var(--em)">—</b></div></div></div>
@@ -194,12 +202,7 @@ AFTER.simulador = () => { const s = S.sim, n = v => +String(v).replace(/\./g, ""
   const sl = (id, k, fmt) => { const el = g(id); if (!el) return; el.oninput = () => { s[k] = +el.value; poe(id, el.value, fmt); if (PAR[id]) poe(PAR[id], el.value, fmt); simRender(true) } };
   const fA = v => brl(v, 0), fY = v => v + (v === 1 ? " ano" : " anos"), fD = v => pct(v, 1);
   sl("sap", "aporte", fA); sl("sanos", "anos", fY); sl("sdy", "dy", fD); sl("sval", "valor", fD); sl("dap", "aporte", fA); sl("danos", "anos", fY); sl("ddy", "dy", fD);
-  const st = g("st-sup"), bt = g("supFull");
-  const cheia = on => { const run = () => { st.classList.toggle("full", on); document.body.classList.toggle("noscroll", on); bt.textContent = on ? "✕" : "⛶"; bt.title = on ? "Sair da tela cheia (Esc)" : "Abrir em tela cheia (Esc para sair)"; bt.setAttribute("aria-label", bt.title) };
-    if (document.startViewTransition && !RM) { document.documentElement.classList.add("vt-sup"); st.style.viewTransitionName = "sup"; const tr = document.startViewTransition(run); tr.ready.catch(() => { });
-      tr.finished.catch(() => { }).then(() => { st.style.viewTransitionName = ""; document.documentElement.classList.remove("vt-sup") }) } else run() };
-  bt.onclick = () => cheia(!st.classList.contains("full"));
-  sairCheia = () => { if (st.classList.contains("full")) { cheia(false); return true } return false };
+
   const tx = () => { if (g("sqtd")) s.qtd = Math.max(1, Math.floor(n(g("sqtd").value)) || 1); if (g("scap")) s.cap = n(g("scap").value) || 0; s.preco = n(g("sprec").value) || s.preco; s.reinv = g("sreinv").checked; simRender(true) };
   ["sqtd", "scap", "sprec", "sreinv"].forEach(id => { const el = g(id); if (el) el.oninput = el.onchange = tx });
   document.querySelectorAll("#smodo button").forEach(b => b.onclick = () => { s.modo = b.dataset.v; if (s.modo === "cap") s.cap = Math.round(s.qtd * s.preco); rota() });
@@ -221,7 +224,7 @@ VIEWS.carteira = () => { const c = carteira(), pat = c.reduce((s, p) => s + (p.a
         <tbody>${c.map(p => `<tr data-tk="${p.t}"><td class="tk"><span class="tkb">${p.t}</span><span class="nm">${p.f ? esc(p.f.nm) : "fora da base de FIIs"}</span></td>
           <td class="n">${int(p.qtd)}</td><td class="n">${brl(p.pm)}</td><td class="n">${brl(p.invest)}</td><td class="n">${brl(p.atual)}</td><td class="n">${p.invest && p.atual ? `<span class="${p.atual - p.invest >= 0 ? "pos" : "neg"}">${pct((p.atual / p.invest - 1) * 100, 1)}</span>` : "—"}</td><td class="n pos">${brl(p.rendMes)}</td></tr>`).join("")}</tbody></table></div>`
         : `<p class="empty">Nenhum FII no Patrimônio ainda.<br>Cadastre o fundo no Patrimônio com o ticker no nome (ex.: <b>MXRF11</b>) e ele aparece aqui.</p>`}</section>
-    <section class="glass stage" id="st-anel" style="height:480px"><div class="hud"><div><div class="lbl">Composição ${T("calc")}</div><div class="cnt" style="margin-top:4px">Ângulo = valor atual · altura = renda mensal estimada</div></div></div>${c.length ? "" : `<p class="empty" style="position:absolute;inset:40% 0 auto">Sem posições.</p>`}${dica("Arraste para girar · passe o mouse nos segmentos")}</section></div>` };
+    <section class="glass stage" id="st-anel" style="height:480px"><div class="hud"><div><div class="lbl">Composição ${T("calc")}</div><div class="cnt" style="margin-top:4px">Ângulo = valor atual · altura = renda mensal estimada</div></div></div>${c.length ? `${xp()}` : `<p class="empty" style="position:absolute;inset:40% 0 auto">Sem posições.</p>`}${dica("Arraste para girar · passe o mouse nos segmentos")}</section></div>` };
 AFTER.carteira = () => { const c = carteira(); ligarLinhas();
   if (c.length) { const seg = {}; c.forEach(p => { const k = p.t; seg[k] = seg[k] || { k: p.t + (p.f ? " · " + p.f.seg : ""), v: 0, renda: 0, c: p.f ? TCOR[p.f.tipo] : "#7C848C" }; seg[k].v += p.atual || 0; seg[k].renda += p.rendMes || 0 }); API.anel = anel3D(document.getElementById("st-anel"), Object.values(seg)) } };
 
@@ -236,11 +239,10 @@ VIEWS.fontes = () => `<p class="eyebrow">Transparência</p><h2 class="ttl">De on
     <p class="foot">Limites: vacância e lista de imóveis/CRIs vêm do Informe Trimestral da CVM — próxima etapa. O informe mensal sai até ~15 dias após o mês; PL e VP podem estar 1 a 2 meses atrás da cotação.</p></section>`;
 
 /* ============ rotas com transição cinematográfica ============ */
-let sairCheia = () => false;
 addEventListener("keydown", e => { if (e.key === "Escape") sairCheia() });
-function rota() { const [v, arg] = (location.hash.slice(1) || "painel").split("/"); const run = () => { limpar3D(); document.body.classList.remove("noscroll"); sairCheia = () => false; for (const k in API) delete API[k]; S.view = v; S.arg = arg ? decodeURIComponent(arg) : null;
+function rota() { const [v, arg] = (location.hash.slice(1) || "painel").split("/"); const run = () => { limpar3D(); document.body.classList.remove("noscroll"); for (const k in API) delete API[k]; S.view = v; S.arg = arg ? decodeURIComponent(arg) : null;
     const ab = v === "fii" ? "explorar" : v; document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.v === ab)); moverTinta();
-    document.getElementById("main").innerHTML = `<div class="view">${(VIEWS[v] || VIEWS.painel)()}</div>`; window.scrollTo({ top: 0, behavior: "instant" }); (AFTER[v] || (() => { }))() };
+    document.getElementById("main").innerHTML = `<div class="view">${(VIEWS[v] || VIEWS.painel)()}</div>`; window.scrollTo({ top: 0, behavior: "instant" }); (AFTER[v] || (() => { }))(); ligarCheia() };
   if (document.startViewTransition && !RM) { const t = document.startViewTransition(run); t.ready.catch(() => { }); t.finished.catch(() => { }).then(() => document.querySelectorAll("[style*='view-transition-name']").forEach(e => { if (!e.classList.contains("ftk")) e.style.viewTransitionName = "" })) } else run() }
 function moverTinta() { const b = document.querySelector("#tabs button.on"), ink = document.getElementById("ink"); if (!b) { ink.style.width = 0; return } ink.style.left = b.offsetLeft + "px"; ink.style.width = b.offsetWidth + "px" }
 addEventListener("hashchange", rota); addEventListener("resize", moverTinta);
