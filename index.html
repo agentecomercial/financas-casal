@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Finanças do Casal</title>
 <meta name="robots" content="noindex,nofollow">
-<meta name="fc-versao" content="4aa968d1">
+<meta name="fc-versao" content="6167cb2b">
 <meta name="theme-color" content="#15103A">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -943,7 +943,7 @@ const canon=v=>v===undefined?"∅":JSON.stringify(v,(k,x)=>x&&typeof x==="object
 function dadosLocais(){const o={};for(const [k,l] of SYNC_COLS)o[k]=lsGet(l)||{};o.cfg=lsGet(LS.cfg)||S.cfg;return o}
 function juntar(L,R,B,remotoJaSync){let conf=0;const M={};const um=(l,r,b)=>{const cl=canon(l),cr=canon(r),cb=canon(b);
     if(cl===cr)return l;if(cl===cb)return r;if(cr===cb)return l;conf++;
-    if(l===undefined)return r;if(r===undefined)return l;const tl=l._t||0,tr=r._t||0;if(tl!==tr)return tl>tr?l:r;return (B?false:remotoJaSync)?r:l};
+    if(l===undefined)return r;if(r===undefined)return l;const tl=l._t||0,tr=r._t||0;if(tl!==tr)return tl>tr?l:r;return B?l:r};/* sem base (1ª sincronização do aparelho): empate vai para a nuvem, que tem os dados mais completos */
   for(const [k] of SYNC_COLS){const l=L[k]||{},r=R[k]||{},b=(B&&B[k])||{},out={};for(const id of new Set([...Object.keys(l),...Object.keys(r),...Object.keys(b)])){const v=um(l[id],r[id],B?b[id]:undefined);if(v!==undefined)out[id]=v}M[k]=out}
   M.cfg=um(L.cfg,R.cfg,B?B.cfg:undefined)||L.cfg||R.cfg;return {M,conf}}
 function pendentes(){const B=lsGet("fc_sync_base");if(!B)return syncAtivo()?1:0;const L=dadosLocais();let n=0;for(const [k] of SYNC_COLS){const l=L[k],b=B[k]||{};for(const id of new Set([...Object.keys(l),...Object.keys(b)]))if(canon(l[id])!==canon(b[id]))n++}if(canon(L.cfg)!==canon(B.cfg))n++;return n}
@@ -962,7 +962,7 @@ async function syncAgora(opt){opt=opt||{};if(!syncAtivo()||SYNC.rodando||S.trava
       if(!pk&&!ch)throw new Error("informe a senha do site em Ajustes → Sincronização");
       const R=pk?await abrirCom(pk,ch):null,L=dadosLocais(),B0=SYNC.semBase?null:lsGet("fc_sync_base");
       /* sem base ainda: se a nuvem é o pacote original (nunca sincronizado), ele É a base de onde cada aparelho partiu — assim edições e exclusões feitas desde então valem */
-      const B=B0||(R&&!R._sync?R:null);
+      const B=B0;
       const {M,conf}=R?juntar(L,R,B,!!(R._sync)):{M:L,conf:0};
       if(canon(M)!==canon(Object.assign({},L))){SYNC.aplicando=true;try{gravarBackupLocal(M);loadLocal();if(!F)render()}finally{SYNC.aplicando=false}}
       let novoSha=sha;const mudouNuvem=!R||canon(Object.assign({},M))!==canon(Object.assign({},R,{_sync:undefined,versao:undefined,gerado:undefined}));
