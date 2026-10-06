@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Finanças do Casal</title>
 <meta name="robots" content="noindex,nofollow">
-<meta name="fc-versao" content="5fb3ed76">
+<meta name="fc-versao" content="4aa968d1">
 <meta name="theme-color" content="#15103A">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -815,7 +815,7 @@ function daysLeft(m){const cur=mkey(new Date());if(m!==cur)return null;const t=n
 /* ---------- storage ---------- */
 const LS={items:"fc_items_v1",cfg:"fc_cfg_v1",pag:"fc_pag_v1",acertos:"fc_acertos_v1",metas:"fc_metas_v1",ativos:"fc_ativos_v1",movs:"fc_movs_v1",bens:"fc_bens_v1",darf:"fc_darf_v1",pagFix:"fc_pagfix_v1"};
 function lsGet(k){try{return JSON.parse(localStorage.getItem(k)||"null")}catch(e){return null}}
-function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}try{if(window.__fcMudou)window.__fcMudou(k)}catch(e){}}
 function loadLocal(){S.items=lsGet(LS.items)||{};S.pag=lsGet(LS.pag)||{};S.pagFix=lsGet(LS.pagFix)||{};S.acertos=lsGet(LS.acertos)||{};S.metas=lsGet(LS.metas)||{};S.ativos=lsGet(LS.ativos)||{};S.movs=lsGet(LS.movs)||{};S.bens=lsGet(LS.bens)||{};S.darf=lsGet(LS.darf)||{};const c=lsGet(LS.cfg);if(c)S.cfg=mergeCfg(c)}
 
 const SEED=null;function seedIfEmpty(){}
@@ -827,7 +827,8 @@ function gravarBackupLocal(o){lsSet(LS.items,o.items||{});lsSet(LS.pag,o.pag||{}
 /* ---------- versão online (GitHub Pages): os dados de partida vêm em dados.enc.json, cifrados (PBKDF2-SHA256 + AES-256-GCM, gerado pelo Cifrar-Dados.js) ---------- */
 const ONLINE=location.protocol!=="file:";
 function temDadosLocais(){try{return Object.values(LS).some(k=>localStorage.getItem(k)!==null)}catch(e){return true}}
-async function lerPacote(){try{const r=await fetch("dados.enc.json?t="+Date.now(),{cache:"no-store"});if(!r.ok)return null;const o=await r.json();return o&&o.ct&&o.iv&&o.salt?o:null}catch(e){return null}}
+async function lerPacote(){try{const sy=await fetch(SYNC.raw()+"?t="+Date.now(),{cache:"no-store"}).then(r=>r.ok?r.json():null).catch(()=>null);if(sy&&sy.ct&&sy.iv&&sy.salt)return sy}catch(e){}
+  try{const r=await fetch("dados.enc.json?t="+Date.now(),{cache:"no-store"});if(!r.ok)return null;const o=await r.json();return o&&o.ct&&o.iv&&o.salt?o:null}catch(e){return null}}
 const b64u8=t=>Uint8Array.from(atob(t),c=>c.charCodeAt(0));
 async function decifrarPacote(pk,senha){const base=await crypto.subtle.importKey("raw",new TextEncoder().encode(senha),"PBKDF2",false,["deriveKey"]);
   const k=await crypto.subtle.deriveKey({name:"PBKDF2",salt:b64u8(pk.salt),iterations:pk.iter,hash:"SHA-256"},base,{name:"AES-GCM",length:256},false,["decrypt"]);
@@ -847,6 +848,8 @@ async function mudarSenha(btn){const g=id=>(document.getElementById(id)||{}).val
   try{const pk=await lerPacote();
     if(pk){let ok=null;try{ok=await decifrarPacote(pk,at)}catch(e){ok=null}if(!ok)return diz("A senha atual não confere com a do site.")}
     if(at&&at===n1)return diz("A senha nova é igual à atual.");
+    if(syncAtivo()){btn.textContent="Sincronizando...";const r=await syncAgora({novaSenha:n1});["snAt","snN1","snN2"].forEach(id=>{const e=document.getElementById(id);if(e)e.value=""});
+      return r.ok?diz("Pronto: senha trocada e enviada. Nos outros aparelhos, a próxima sincronização vai pedir a senha nova.",true):diz("Não consegui enviar: "+r.erro)}
     btn.textContent="Cifrando...";const novo=await cifrarPacote(montarBackup(),n1);
     const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(novo)],{type:"application/json"}));a.download="dados.enc.json";document.body.appendChild(a);a.click();a.remove();
     ["snAt","snN1","snN2"].forEach(id=>{const e=document.getElementById(id);if(e)e.value=""});
@@ -907,6 +910,91 @@ function drawCatDet(){const {cat}=F,m=S.sel,d=monthData(m),cfg=S.cfg,meta=CATS_O
     <p class="muted small" style="margin:0 0 8px">${meta?`Meta ${brl(meta)} (${cfg.pct[cat]}% da renda). ${cat==="inv"?(tot>=meta?"Cumprida.":`Faltam ${brl(meta-tot)} de aportes.`):tot>meta?`Passou ${brl(tot-meta)}.`:`Ainda cabem ${brl(meta-tot)}.`}`:cat==="srv"?"Custo da empresa, sem meta.":""}${fx?` Fixas ${brl(fx)} · variáveis ${brl(tot-fx)}.`:""}</p>
     ${corpo||`<p class="muted">Nada em ${mLong(m)}.</p>`}
     <p class="muted small" style="margin:12px 0">Toque num item para ver ou editar.</p><button class="btn ghost" data-act="close">Fechar</button>`}
+/* ===================== SINCRONIZAÇÃO entre aparelhos (web, celular, atalho do Desktop) =====================
+   Fonte única: dados.enc.json no ramo "sync" do repositório do site (cifrado com a senha do site, AES-256-GCM).
+   Cada aparelho guarda a "base" = última versão sincronizada. Ao sincronizar: baixa o arquivo (API do GitHub, sem cache),
+   junta em 3 vias (base × aparelho × nuvem) registro a registro, grava no aparelho e envia o resultado com o sha lido
+   (se outro aparelho enviou antes, o GitHub recusa e a junção é refeita). Exclusões valem porque a base lembra o que existia. */
+const SYNC={repo:"agentecomercial/financas-casal",arq:"dados.enc.json",ramo:()=>{try{return localStorage.getItem("fc_sync_ramo")||"sync"}catch(e){return "sync"}},
+  raw(){return `https://raw.githubusercontent.com/${this.repo}/${this.ramo()}/${this.arq}`},rodando:false,de:null,em:null,erro:null,pend:0,aplicando:false,semBase:false,timer:null};
+const SYNC_COLS=[["items",LS.items],["pag",LS.pag],["pagFix",LS.pagFix],["acertos",LS.acertos],["metas",LS.metas],["ativos",LS.ativos],["movs",LS.movs],["bens",LS.bens],["darf",LS.darf]];
+const syncToken=()=>{try{return localStorage.getItem("fc_sync_token")||""}catch(e){return ""}};
+const syncAtivo=()=>!!syncToken();
+/* chave de cifra guardada no aparelho como CryptoKey não exportável (IndexedDB): a senha não fica salva */
+function idb(){return new Promise((res,rej)=>{const r=indexedDB.open("fc_sync",1);r.onupgradeneeded=()=>r.result.createObjectStore("k");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+async function idbGet(k){const d=await idb();return new Promise(res=>{const t=d.transaction("k").objectStore("k").get(k);t.onsuccess=()=>res(t.result||null);t.onerror=()=>res(null)})}
+async function idbSet(k,v){const d=await idb();return new Promise(res=>{const t=d.transaction("k","readwrite");t.objectStore("k").put(v,k);t.oncomplete=()=>res(true);t.onerror=()=>res(false)})}
+async function derivar(senha,saltB64,iter){const base=await crypto.subtle.importKey("raw",new TextEncoder().encode(senha),"PBKDF2",false,["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2",salt:b64u8(saltB64),iterations:iter,hash:"SHA-256"},base,{name:"AES-GCM",length:256},false,["encrypt","decrypt"])}
+async function syncGuardarChave(pk,senha){const key=await derivar(senha,pk.salt,pk.iter);await idbSet("chave",{key,salt:pk.salt,iter:pk.iter});return key}
+async function abrirCom(pk,ch){return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:b64u8(pk.iv)},ch.key,b64u8(pk.ct))))}
+async function fecharCom(obj,ch){const iv=crypto.getRandomValues(new Uint8Array(12));const ct=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},ch.key,new TextEncoder().encode(JSON.stringify(obj))));
+  return {v:1,kdf:"PBKDF2-SHA256",iter:ch.iter,salt:ch.salt,iv:u8b64(iv),ct:u8b64(ct)}}
+/* GitHub: leitura e gravação com controle de versão (sha) */
+async function ghGet(){const r=await fetch(`https://api.github.com/repos/${SYNC.repo}/contents/${SYNC.arq}?ref=${SYNC.ramo()}&t=${Date.now()}`,{cache:"no-store",headers:{Authorization:"Bearer "+syncToken(),Accept:"application/vnd.github+json"}});
+  if(r.status===401||r.status===403)throw new Error("chave do GitHub recusada (confira em Ajustes)");if(r.status===404)return {sha:null,pk:null};if(!r.ok)throw new Error("GitHub respondeu "+r.status);
+  const j=await r.json();return {sha:j.sha,pk:JSON.parse(atob((j.content||"").replace(/\s/g,"")))}}
+async function ghPut(pk,sha){const body={message:"Sincronização: "+(navigator.userAgentData&&navigator.userAgentData.mobile||/Mobi|Android|iPhone/i.test(navigator.userAgent)?"celular":"computador")+" "+new Date().toISOString(),content:btoa(JSON.stringify(pk)),branch:SYNC.ramo()};if(sha)body.sha=sha;
+  const r=await fetch(`https://api.github.com/repos/${SYNC.repo}/contents/${SYNC.arq}`,{method:"PUT",headers:{Authorization:"Bearer "+syncToken(),Accept:"application/vnd.github+json","Content-Type":"application/json"},body:JSON.stringify(body)});
+  if(r.status===409||r.status===422)return {conflito:true};if(r.status===401||r.status===403)throw new Error("chave do GitHub sem permissão de escrita");if(!r.ok)throw new Error("GitHub respondeu "+r.status);
+  const j=await r.json();return {sha:j.content&&j.content.sha}}
+/* junção em 3 vias */
+const canon=v=>v===undefined?"∅":JSON.stringify(v,(k,x)=>x&&typeof x==="object"&&!Array.isArray(x)?Object.keys(x).sort().reduce((o,q)=>(o[q]=x[q],o),{}):x);
+function dadosLocais(){const o={};for(const [k,l] of SYNC_COLS)o[k]=lsGet(l)||{};o.cfg=lsGet(LS.cfg)||S.cfg;return o}
+function juntar(L,R,B,remotoJaSync){let conf=0;const M={};const um=(l,r,b)=>{const cl=canon(l),cr=canon(r),cb=canon(b);
+    if(cl===cr)return l;if(cl===cb)return r;if(cr===cb)return l;conf++;
+    if(l===undefined)return r;if(r===undefined)return l;const tl=l._t||0,tr=r._t||0;if(tl!==tr)return tl>tr?l:r;return (B?false:remotoJaSync)?r:l};
+  for(const [k] of SYNC_COLS){const l=L[k]||{},r=R[k]||{},b=(B&&B[k])||{},out={};for(const id of new Set([...Object.keys(l),...Object.keys(r),...Object.keys(b)])){const v=um(l[id],r[id],B?b[id]:undefined);if(v!==undefined)out[id]=v}M[k]=out}
+  M.cfg=um(L.cfg,R.cfg,B?B.cfg:undefined)||L.cfg||R.cfg;return {M,conf}}
+function pendentes(){const B=lsGet("fc_sync_base");if(!B)return syncAtivo()?1:0;const L=dadosLocais();let n=0;for(const [k] of SYNC_COLS){const l=L[k],b=B[k]||{};for(const id of new Set([...Object.keys(l),...Object.keys(b)]))if(canon(l[id])!==canon(b[id]))n++}if(canon(L.cfg)!==canon(B.cfg))n++;return n}
+function syncTxt(){if(S.mode==="db")return "Compartilhado pelo casal";if(!syncAtivo())return "Salvo só neste aparelho";
+  if(SYNC.rodando)return "⟳ Sincronizando…";if(SYNC.erro)return "⚠ Não sincronizado"+(SYNC.pend?` · ${SYNC.pend} ${SYNC.pend===1?"alteração pendente":"alterações pendentes"}`:"")+" · tocar para tentar";
+  if(SYNC.pend)return `⟳ ${SYNC.pend} ${SYNC.pend===1?"alteração":"alterações"} a enviar`;return SYNC.em?`✓ Sincronizado às ${new Date(SYNC.em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}`:"⟳ Sincronização ligada"}
+function syncPintar(){const t=syncTxt();document.querySelectorAll("[data-syncnow]").forEach(e=>{e.textContent=t;e.classList.toggle("neg",!!SYNC.erro)});const st=document.getElementById("syStatus");if(st)st.textContent=t+(SYNC.erro?" — "+SYNC.erro:"")}
+async function syncAgora(opt){opt=opt||{};if(!syncAtivo()||SYNC.rodando||S.travado)return {ok:false,erro:"indisponível"};
+  if(!navigator.onLine){SYNC.erro="sem conexão";SYNC.pend=pendentes();syncPintar();return {ok:false,erro:"sem conexão"}}
+  SYNC.rodando=true;syncPintar();
+  try{let ch=await idbGet("chave");
+    for(let tent=0;tent<4;tent++){const {sha,pk}=await ghGet();
+      if(pk&&ch&&(pk.salt!==ch.salt||pk.iter!==ch.iter))ch=null;
+      if(pk&&!ch){const senha=prompt("Sincronização: digite a senha do site para liberar este aparelho (a senha foi trocada em outro aparelho ou ainda não foi informada aqui).");if(!senha)throw new Error("senha não informada");
+        ch={key:await derivar(senha,pk.salt,pk.iter),salt:pk.salt,iter:pk.iter};try{await abrirCom(pk,ch)}catch(e){throw new Error("senha incorreta")}await idbSet("chave",ch)}
+      if(!pk&&!ch)throw new Error("informe a senha do site em Ajustes → Sincronização");
+      const R=pk?await abrirCom(pk,ch):null,L=dadosLocais(),B0=SYNC.semBase?null:lsGet("fc_sync_base");
+      /* sem base ainda: se a nuvem é o pacote original (nunca sincronizado), ele É a base de onde cada aparelho partiu — assim edições e exclusões feitas desde então valem */
+      const B=B0||(R&&!R._sync?R:null);
+      const {M,conf}=R?juntar(L,R,B,!!(R._sync)):{M:L,conf:0};
+      if(canon(M)!==canon(Object.assign({},L))){SYNC.aplicando=true;try{gravarBackupLocal(M);loadLocal();if(!F)render()}finally{SYNC.aplicando=false}}
+      let novoSha=sha;const mudouNuvem=!R||canon(Object.assign({},M))!==canon(Object.assign({},R,{_sync:undefined,versao:undefined,gerado:undefined}));
+      if(opt.novaSenha){const npk=await cifrarPacote(Object.assign({},M),opt.novaSenha);ch={key:await derivar(opt.novaSenha,npk.salt,npk.iter),salt:npk.salt,iter:npk.iter}}
+      if(mudouNuvem||opt.novaSenha){const env=Object.assign({versao:1,gerado:new Date().toISOString()},M,{_sync:{em:new Date().toISOString()}});
+        const r=await ghPut(await fecharCom(env,ch),sha);if(r.conflito)continue;novoSha=r.sha;if(opt.novaSenha)await idbSet("chave",ch)}
+      lsSet("fc_sync_base",M);try{localStorage.setItem("fc_sync_sha",novoSha||"")}catch(e){}
+      SYNC.semBase=false;SYNC.em=Date.now();SYNC.erro=null;SYNC.pend=pendentes();if(conf&&!opt.quieto)toast(`Sincronizado · ${conf} ${conf===1?"registro editado":"registros editados"} nos dois aparelhos: ficou a alteração mais recente`);
+      return {ok:true,conf}}
+    throw new Error("outro aparelho sincronizou ao mesmo tempo; tente de novo")}
+  catch(e){SYNC.erro=(e&&e.message)||"falha de conexão";SYNC.pend=pendentes();return {ok:false,erro:SYNC.erro}}
+  finally{SYNC.rodando=false;syncPintar()}}
+function syncAgendar(ms){if(!syncAtivo())return;clearTimeout(SYNC.timer);SYNC.timer=setTimeout(()=>syncAgora({quieto:true}),ms==null?2500:ms)}
+window.__fcMudou=k=>{if(SYNC.aplicando||k==="fc_sync_base")return;if(Object.values(LS).includes(k)){SYNC.pend=pendentes();syncPintar();syncAgendar()}};
+/* outra janela do mesmo navegador gravou (ex.: site + atalho do Desktop abertos juntos): recarrega na hora */
+addEventListener("storage",e=>{if(e.key&&Object.values(LS).includes(e.key)&&!S.travado){loadLocal();if(!F)render()}});
+addEventListener("online",()=>syncAgendar(300));addEventListener("offline",()=>{SYNC.erro="sem conexão";syncPintar()});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)syncAgendar(400)});
+setInterval(()=>{if(!document.hidden)syncAgora({quieto:true})},60000);
+document.addEventListener("click",e=>{if(e.target.closest("[data-syncnow]")&&syncAtivo()){syncAgora().then(r=>toast(r.ok?"Sincronizado":"Não sincronizou: "+r.erro))}});
+async function syncAtivar(btn){const g=id=>(document.getElementById(id)||{}).value||"",tk=g("syTok").trim(),senha=g("sySenha"),m=document.getElementById("syMsg");const diz=(t,ok)=>{m.textContent=t;m.className="small "+(ok?"pos":"neg")};
+  if(!/^(github_pat_|gh[pousr]_)/.test(tk))return diz("Cole a chave do GitHub (começa com github_pat_).");
+  btn.disabled=true;const rot=btn.textContent;btn.textContent="Conferindo...";
+  try{try{localStorage.setItem("fc_sync_token",tk)}catch(e){}const {pk}=await ghGet();
+    if(pk){if(!senha)throw new Error("informe a senha do site");const ch={key:await derivar(senha,pk.salt,pk.iter),salt:pk.salt,iter:pk.iter};try{await abrirCom(pk,ch)}catch(e){throw new Error("senha do site incorreta")}await idbSet("chave",ch)}
+    else{if(senha.length<12)throw new Error("primeira sincronização: crie a senha do site (12+ caracteres)");const t=await cifrarPacote({},senha);await idbSet("chave",{key:await derivar(senha,t.salt,t.iter),salt:t.salt,iter:t.iter})}
+    if(!lsGet("fc_sync_base"))SYNC.semBase=true;const r=await syncAgora();if(!r.ok)throw new Error(r.erro);
+    const txt=r.conf?`Sincronização ligada. ${r.conf} ${r.conf===1?"registro estava diferente":"registros estavam diferentes"} nos dois lados: ficou a versão mais recente.`:"Sincronização ligada. Este aparelho já está com os dados de todos.";
+    render();const m2=document.getElementById("syMsg");if(m2){m2.textContent=txt;m2.className="small pos"}toast("Sincronização ligada")}
+  catch(e){try{if(!lsGet("fc_sync_base"))localStorage.removeItem("fc_sync_token")}catch(x){}diz("Não ativei: "+e.message)}
+  finally{btn.disabled=false;btn.textContent=rot;syncPintar()}}
+function syncDesligar(){if(!confirm("Desligar a sincronização neste aparelho? Os dados continuam aqui; só param de ir e vir."))return;try{["fc_sync_token","fc_sync_base","fc_sync_sha"].forEach(k=>localStorage.removeItem(k))}catch(e){}SYNC.em=null;SYNC.erro=null;render();toast("Sincronização desligada neste aparelho")}
 function telaSenha(pk,opt){opt=opt||{};S.travado=true;document.body.classList.add("travado");window.scrollTo(0,0);
   app.innerHTML=`<section class="panel glass lock"><h1>Finanças do Casal</h1>
     <p class="desc">${opt.recarregar?"Isto troca os dados deste aparelho pelos do site.":"Os dados deste site estão protegidos."} Digite a senha para carregá-los neste aparelho.</p>
@@ -918,6 +1006,7 @@ function telaSenha(pk,opt){opt=opt||{};S.travado=true;document.body.classList.ad
   document.getElementById("lockF").onsubmit=async ev=>{ev.preventDefault();const b=document.getElementById("lockOk"),er=document.getElementById("lockErr");
     b.disabled=true;b.textContent="Abrindo...";let o=null;try{o=await decifrarPacote(pk,inp.value)}catch(e){o=null}
     if(!o||!o.items||!o.cfg){b.disabled=false;b.textContent="Carregar meus dados";er.textContent="Senha incorreta. Tente de novo.";inp.select();return}
+    syncGuardarChave(pk,inp.value).catch(()=>{});lsSet("fc_sync_base",o);setTimeout(()=>syncAgendar(1500),0);
     gravarBackupLocal(o);S.travado=false;loadLocal();migrarCom();S.sel=null;render();setTimeout(()=>aplicarArquivoCotacoes(),300);toast(`Dados carregados: ${Object.keys(o.items).length} lançamentos`)};
   document.getElementById("lockVazio").onclick=()=>{if(!opt.recarregar)lsSet(LS.cfg,S.cfg);S.travado=false;render()}}
 async function carregarDoSite(){const pk=await lerPacote();if(!pk)return toast("Este site não tem dados para carregar.");telaSenha(pk,{recarregar:true})}
@@ -931,7 +1020,7 @@ async function restoreJSON(file){if(!file)return;let o;try{o=JSON.parse(await fi
   S.sel=null;render();toast("Backup restaurado")}
 function mergeCfg(c){const m=Object.assign(clone(DEFAULT_CFG),clone(c));m.subMetas=Object.assign(clone(DEFAULT_CFG.subMetas),c.subMetas||{});m.alvo=Object.assign(clone(DEFAULT_CFG.alvo),c.alvo||{});m.ids=c.ids||{};return m}
 async function saveDoc(coll,id,data,store,lsKey){
-  store[id]=Object.assign({id},data);
+  data=Object.assign({},data,{_t:Date.now()});store[id]=Object.assign({id},data);
   if(S.db){try{await S.db.collection(coll).doc(id).set(data)}catch(e){toast("Não foi possível salvar. Tente de novo.");return false}}
   else lsSet(lsKey,store);
   render();return true;
@@ -1214,7 +1303,7 @@ function patrimonio(){
   const tabs=[["resumo","Resumo"],["ativos","Ativos"],["renda","Renda e IR"],["planos","Planos"]].map(([k,n])=>`<button class="chip${sub===k?" on":""}" data-psub="${k}">${n}</button>`).join("");
   const rp=pctRend(c.rend,c.aplicado);
   const ct=cotacaoTxt();
-  const head=`<div class="top"><h1>Patrimônio</h1><button class="mini gold" data-act="report">Relatório do mês</button></div><p class="sync">${S.mode==="db"?"Compartilhado pelo casal":"Salvo só neste aparelho"}</p>
+  const head=`<div class="top"><h1>Patrimônio</h1><button class="mini gold" data-act="report">Relatório do mês</button></div><p class="sync" data-syncnow>${syncTxt()}</p>
   <p class="cotline">${ct?ct+" ":""}${S.cotWait?`<span class="cotwait"><i></i>Cole <b>atualizar ativos</b> no chat do Claude. A cotação entra sozinha.</span> <button class="mini" data-act="cotCancel">cancelar</button>`:`<button class="mini gold" data-act="cotNow" title="${ONLINE?"Relê as cotações publicadas":"Copia o comando para colar no chat do Claude"}">Atualizar</button>`}
   ${tickersForaDoArquivo().length?`<span class="neg">${tickersForaDoArquivo().join(", ")} fora da lista: adicione em tickers.txt</span>`:""}</p>
   <div class="hero${sub==="resumo"?"":" solo"}">${sub==="resumo"?`<div class="vault-wrap"><div class="vault">${[...Array(7)].map((_,i)=>`<i style="--i:${i}"></i>`).join("")}</div></div>`:""}
@@ -1997,7 +2086,7 @@ function render(){
   document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on",b.dataset.tab===S.tab));
   document.body.classList.toggle("full",S.full);
   if(S.dz.intro&&S.tab!=="painel")S.dz.intro="";
-  const bs=document.getElementById("brandSync");if(bs)bs.textContent=S.mode==="db"?"Compartilhado pelo casal":"Salvo só neste aparelho";
+  const bs=document.getElementById("brandSync");if(bs){bs.textContent=syncTxt();bs.setAttribute("data-syncnow","")}
   app.innerHTML=S.full?fullscreen():S.tab==="painel"?painel():S.tab==="lanc"?lancamentos():S.tab==="patri"?patrimonio():ajustes();
   S.intro=false;
   if(S.dz.pin&&document.querySelector(".dzsvg"))dzFocus();
@@ -2009,7 +2098,7 @@ function countUp(el){const to=parseInt(el.dataset.v||"0");const from=S.lastBig;S
 function monthNav(){
   return `<div class="top"><button class="nav" data-act="prev" aria-label="Mês anterior">‹</button>
   <h1>${mLong(S.sel)}</h1><button class="nav" data-act="next" aria-label="Próximo mês">›</button></div>
-  <p class="sync">${S.mode==="db"?"Compartilhado pelo casal":"Salvo só neste aparelho"}</p>`;
+  <p class="sync" data-syncnow>${syncTxt()}</p>`;
 }
 const CARD_STYLES=["bradesco","nubank","c3","c4","c5"];
 function cardStyle(f){const i=cardIds().indexOf(f);return f==="bradesco"||f==="nubank"?f:CARD_STYLES[Math.min(4,Math.max(2,i))]}
@@ -2503,6 +2592,12 @@ function ajustes(){
   <section class="panel glass"><h2>Importar do banco</h2><p class="desc">Arquivo OFX ou CSV exportado do banco. Cada linha vira uma compra única.</p>
     <div class="field"><label for="impForma">Lançar como</label><div class="seg" data-seg="impForma">${cardIds().map(k=>`<button type="button" class="${(S.impForma||cardIds()[0])===k?"on":""}" data-v="${k}">${esc(formaNome(k))}</button>`).join("")}</div></div>
     <input type="file" id="impFile" accept=".ofx,.csv,.txt" class="file"></section>
+  <section class="panel glass" id="syBox"><h2>Sincronização</h2><p class="desc">Web, celular e atalho do Desktop usam os mesmos dados. Sincroniza sozinho ao abrir, ao salvar e a cada minuto; o status aparece no topo de cada aba (toque nele para sincronizar na hora).</p>
+    <p id="syStatus" class="small" style="margin:0 0 12px">${syncTxt()}</p>
+    ${syncAtivo()?`<button class="btn" data-act="syncAgora">⟳ Sincronizar agora</button><button class="btn ghost" data-act="syncDesligar">Desligar neste aparelho</button>`
+    :`<div class="field"><label for="syTok">Chave do GitHub</label><input id="syTok" type="password" autocomplete="off" placeholder="github_pat_…"><p class="muted small" style="margin:6px 0 0">Crie em <b>github.com → Settings → Developer settings → Fine-grained tokens</b>: repositório <b>agentecomercial/financas-casal</b>, permissão <b>Contents: Read and write</b>. Use a mesma chave em cada aparelho.</p></div>
+    <div class="field"><label for="sySenha">Senha do site</label><input id="sySenha" type="password" autocomplete="current-password"></div>
+    <button class="btn" data-act="syncAtivar">Ligar a sincronização</button>`}<p id="syMsg" class="small" style="margin:10px 0 0"></p></section>
   <section class="panel glass" id="snBox"><h2>Senha do site</h2><p class="desc">Troca a senha que protege os dados publicados. O pacote novo leva os dados deste aparelho.</p>
     <div class="field"><label for="snAt">Senha atual</label><input id="snAt" type="password" autocomplete="current-password"></div>
     <div class="field"><label for="snN1">Senha nova <span class="muted small">(12 caracteres ou mais)</span></label><input id="snN1" type="password" autocomplete="new-password"></div>
@@ -2774,6 +2869,9 @@ app.addEventListener("click",async e=>{
     else if(act==="backup")backupJSON();
     else if(act==="carregarSite")carregarDoSite();
     else if(act==="mudarSenha")mudarSenha(a);
+    else if(act==="syncAtivar")syncAtivar(a);
+    else if(act==="syncAgora")syncAgora().then(r=>{toast(r.ok?"Sincronizado":"Não sincronizou: "+r.erro);render()});
+    else if(act==="syncDesligar")syncDesligar();
     else if(act==="pjLimpar")setProj("over",{});
     else if(act==="cotNow")pedirAtualizacao();
     else if(act==="cotCancel"){if(S.cotWait)clearInterval(S.cotWait.iv);S.cotWait=null;render()}
@@ -2934,7 +3032,7 @@ if(ONLINE){setTimeout(checarVersao,1500);setInterval(checarVersao,5*60000);docum
 if(location.hash==="#patri")S.tab="patri";
 applyTheme();
 (async()=>{const precisa=ONLINE&&!temDadosLocais();if(precisa){S.travado=true;document.body.classList.add("travado")}const pk=precisa?await lerPacote():null;if(pk){telaSenha(pk);return}
-  S.travado=false;seedIfEmpty();loadLocal();migrarCom();render();setTimeout(()=>aplicarArquivoCotacoes(),300);setTimeout(migrarSubs,700)})();
+  S.travado=false;setTimeout(()=>syncAgendar(800),0);seedIfEmpty();loadLocal();migrarCom();render();setTimeout(()=>aplicarArquivoCotacoes(),300);setTimeout(migrarSubs,700)})();
 (async()=>{
   let db=null;
   try{db=window.claude&&window.claude.use?await window.claude.use("db"):null}catch(e){db=null}

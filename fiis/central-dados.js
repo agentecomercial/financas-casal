@@ -37,6 +37,9 @@ const tipEl = document.getElementById("tip");
 function tipOn(x, y, html) { tipEl.innerHTML = html; tipEl.classList.add("on"); const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
   tipEl.style.left = Math.max(8, Math.min(innerWidth - w - 8, x + 18)) + "px"; tipEl.style.top = Math.max(8, Math.min(innerHeight - h - 8, y + 18)) + "px" }
 function tipOff() { tipEl.classList.remove("on") }
+/* toque: o balão fecha ao rolar ou ao tocar fora de um gráfico */
+addEventListener("scroll", () => { if (TOQUE) tipOff() }, { passive: true });
+document.addEventListener("pointerdown", e => { if (e.pointerType === "touch" && !e.target.closest("canvas,.hv")) tipOff() });
 const tipLinhas = (titulo, linhas) => `<div class="h">${titulo}</div>` + linhas.map(([k, v]) => `<div class="r"><span>${k}</span><b>${v}</b></div>`).join("");
 
 /* número que "chega" suavemente ao valor */
@@ -54,8 +57,8 @@ function carteira() { const out = [], at = lsj("fc_ativos_v1") || {}, mv = Objec
       else if (x.tipo === "saldo" && x.qtd) qtd = x.qtd; else if (x.tipo === "provento") prov += x.valor || 0;
       if (x.data && x.tipo !== "provento") hq.push([x.data.slice(0, 7), qtd]) }
     if (qtd > 0) out.push({ t: m[1], qtd, pm: qInv ? inv / qInv / 100 : null, prov: prov / 100, origem: "app", hq }) }
-  return out.map(p => { const f = BY[p.t], atual = f ? f.preco * p.qtd : null, invest = p.pm ? p.pm * p.qtd : null, rendMes = f && f.div12 ? f.div12 / 12 * p.qtd : null;
-    return Object.assign(p, { f, atual, invest, rendMes }) }) }
+  return out.map(p => { const f = BY[p.t], atual = f ? f.preco * p.qtd : null, invest = p.pm ? p.pm * p.qtd : null, rendMes = f && f.div12 ? f.div12 / 12 * p.qtd : null, rendUlt = f && f.ultDiv ? f.ultDiv.v * p.qtd : null; /* média 12m × cotas | último pagamento × cotas */
+    return Object.assign(p, { f, atual, invest, rendMes, rendUlt }) }) }
 /* evolução mês a mês: cotas que você tinha em cada mês × fechamento do mês; rendimentos = cotas × pagamentos do mês */
 function historico(cart, n) { const fim = new Date().toISOString().slice(0, 7), meses = []; let [y, m] = fim.split("-").map(Number);
   for (let i = 0; i < n; i++) { meses.unshift(y + "-" + String(m).padStart(2, "0")); m--; if (!m) { m = 12; y-- } }
@@ -93,7 +96,7 @@ const RANKS = [
 /* ---------- atmosfera: partículas douradas, luz que segue o mouse, parallax nos cartões ---------- */
 (function atmosfera() { const c = document.getElementById("atmo"), x = c.getContext("2d"); let W, H, P = [];
   const rs = () => { W = c.width = innerWidth * devicePixelRatio; H = c.height = innerHeight * devicePixelRatio; c.style.width = innerWidth + "px"; c.style.height = innerHeight + "px";
-    P = Array.from({ length: Math.round(innerWidth / 22) }, () => ({ x: Math.random() * W, y: Math.random() * H, r: (Math.random() * 1.2 + .3) * devicePixelRatio, v: Math.random() * .18 + .04, a: Math.random() * .5 + .15, f: Math.random() * 6 })) };
+    P = Array.from({ length: Math.round(innerWidth / (TOQUE ? 34 : 22)) }, () => ({ x: Math.random() * W, y: Math.random() * H, r: (Math.random() * 1.2 + .3) * devicePixelRatio, v: Math.random() * .18 + .04, a: Math.random() * .5 + .15, f: Math.random() * 6 })) };
   rs(); addEventListener("resize", rs); let mx = 0, my = 0;
   addEventListener("pointermove", e => { mx = e.clientX / innerWidth - .5; my = e.clientY / innerHeight - .5; document.body.style.setProperty("--lx", (50 + mx * 40) + "%"); document.body.style.setProperty("--ly", (-10 + my * 20) + "%") });
   if (RM) return;

@@ -9,22 +9,25 @@ function palco(el, o = {}) {
   if (!window.THREE || !THREE.OrbitControls) { el.insertAdjacentHTML("afterbegin", '<div class="loading3d">Visualização 3D indisponível: sem conexão com a biblioteca gráfica.</div>'); return null }
   const w = el.clientWidth || 600, h = el.clientHeight || 400;
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(w, h); renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.setPixelRatio(Math.min(devicePixelRatio, TOQUE ? 1.5 : 2)); renderer.setSize(w, h, false); renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = o.semTom ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = .92; el.prepend(renderer.domElement);
+  const cw = renderer.domElement.clientWidth || w, chh = renderer.domElement.clientHeight || h; if (cw !== w || chh !== h) renderer.setSize(cw, chh, false);
   const scene = new THREE.Scene(); scene.fog = new THREE.FogExp2(0x05070a, o.fog || .02);
-  const camera = new THREE.PerspectiveCamera(o.fov || 36, w / h, .1, 300); camera.position.set(...(o.cam || [0, 6, 20]));
+  const camera = new THREE.PerspectiveCamera(o.fov || 36, (renderer.domElement.clientWidth || w) / (renderer.domElement.clientHeight || h), .1, 300); camera.position.set(...(o.cam || [0, 6, 20]));
   const ctl = new THREE.OrbitControls(camera, renderer.domElement); ctl.target.set(...(o.alvo || [0, 2, 0]));
-  Object.assign(ctl, { enableDamping: true, dampingFactor: .07, enablePan: false, rotateSpeed: .55, enableZoom: false, minDistance: o.minD || 6, maxDistance: o.maxD || 45, minPolarAngle: o.minP ?? .05, maxPolarAngle: o.maxP ?? 1.48 });
-  ctl.enabled = !TOQUE; if (o.giro && !RM) { ctl.autoRotate = true; ctl.autoRotateSpeed = o.giro }
+  const fator = () => camera.aspect < 1.2 ? Math.min(2.6, Math.pow(1.2 / camera.aspect, .85)) : 1, afasta = (pos, alvo) => { const a = new THREE.Vector3(...alvo); return new THREE.Vector3(...pos).sub(a).multiplyScalar(fator()).add(a).toArray() };
+  camera.position.set(...afasta(o.cam || [0, 6, 20], o.alvo || [0, 2, 0]));
+  Object.assign(ctl, { enableDamping: true, dampingFactor: .07, enablePan: false, rotateSpeed: .55, enableZoom: false, minDistance: o.minD || 6, maxDistance: (o.maxD || 45) * fator(), minPolarAngle: o.minP ?? .05, maxPolarAngle: o.maxP ?? 1.48 });
+  ctl.enabled = !TOQUE; renderer.domElement.style.touchAction = TOQUE ? "pan-y" : "none"; if (o.giro && !RM) { ctl.autoRotate = true; ctl.autoRotateSpeed = o.giro }
   ctl.addEventListener("start", () => { ctl.autoRotate = false });
   scene.add(new THREE.AmbientLight(0xffffff, .28), new THREE.HemisphereLight(0xf3e7cf, 0x0a0d12, .55));
   const sol = new THREE.DirectionalLight(0xffe2b0, 1.25); sol.position.set(6, 14, 10); scene.add(sol);
   const rim = new THREE.DirectionalLight(0x7fd8c4, .55); rim.position.set(-12, 5, -10); scene.add(rim);
   const S = { el, scene, camera, ctl, renderer, hov: [], tw: [], loopFns: [], cur: null };
   S.tween = (dur, fn, done) => S.tw.push({ t0: performance.now(), dur: RM ? 1 : dur, fn, done });
-  S.voar = (pos, alvo, dur = 1100) => { const p0 = camera.position.clone(), a0 = ctl.target.clone(), p1 = new THREE.Vector3(...pos), a1 = new THREE.Vector3(...alvo); ctl.autoRotate = false;
+  S.voar = (pos, alvo, dur = 1100, perto) => { const p0 = camera.position.clone(), a0 = ctl.target.clone(), p1 = new THREE.Vector3(...(perto ? pos : afasta(pos, alvo))), a1 = new THREE.Vector3(...alvo); ctl.autoRotate = false;
     S.tween(dur, e => { camera.position.lerpVectors(p0, p1, e); ctl.target.lerpVectors(a0, a1, e) }) };
-  S.zoom = f => { const d = camera.position.clone().sub(ctl.target), nd = Math.min(ctl.maxDistance, Math.max(ctl.minDistance, d.length() * f)); S.voar(ctl.target.clone().add(d.setLength(nd)).toArray(), ctl.target.toArray(), 450) };
+  S.zoom = f => { const d = camera.position.clone().sub(ctl.target), nd = Math.min(ctl.maxDistance, Math.max(ctl.minDistance, d.length() * f)); S.voar(ctl.target.clone().add(d.setLength(nd)).toArray(), ctl.target.toArray(), 450, true) };
   const ray = new THREE.Raycaster(), pt = new THREE.Vector2();
   const pick = e => { const b = renderer.domElement.getBoundingClientRect(); pt.x = (e.clientX - b.left) / b.width * 2 - 1; pt.y = -(e.clientY - b.top) / b.height * 2 + 1; ray.setFromCamera(pt, camera);
     return ray.intersectObjects(S.hov.filter(x => x.visible), false)[0] };
@@ -32,18 +35,20 @@ function palco(el, o = {}) {
     if (ob !== S.cur) { if (S.cur && S.onLeave) S.onLeave(S.cur); S.cur = ob; if (ob && S.onEnter) S.onEnter(ob, hit) }
     if (ob && S.onHover) { S.onHover(ob, e, hit); renderer.domElement.style.cursor = "pointer" } else { tipOff(); renderer.domElement.style.cursor = "" } };
   renderer.domElement.addEventListener("pointermove", mover);
-  renderer.domElement.addEventListener("pointerleave", () => { if (S.cur && S.onLeave) S.onLeave(S.cur); S.cur = null; tipOff() });
+  renderer.domElement.addEventListener("pointerleave", e => { if (e.pointerType === "touch") return; if (S.cur && S.onLeave) S.onLeave(S.cur); S.cur = null; tipOff() }); // no toque o balão fica até o próximo toque
   let down = null; renderer.domElement.addEventListener("pointerdown", e => down = [e.clientX, e.clientY]);
   renderer.domElement.addEventListener("pointerup", e => { if (down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) < 6) { const hit = pick(e); if (TOQUE) mover(e); if (hit && S.onClick) S.onClick(hit.object, e, hit) } down = null });
   renderer.domElement.addEventListener("dblclick", () => S.zoom(.7));
   let raf; const loop = t => { raf = requestAnimationFrame(loop);
     S.tw = S.tw.filter(x => { const p = Math.min(1, (t - x.t0) / x.dur); x.fn(easeOut(p), p); if (p >= 1) { x.done && x.done(); return false } return true });
     S.loopFns.forEach(f => f(t)); ctl.update(); renderer.render(scene, camera) }; raf = requestAnimationFrame(loop);
-  const ro = new ResizeObserver(() => { const w = el.clientWidth, h = el.clientHeight; if (!w || !h) return; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix() }); ro.observe(el);
+  const ro = new ResizeObserver(() => { const c = renderer.domElement, w = c.clientWidth, h = c.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix() }); ro.observe(renderer.domElement);
   const liberar = g => g.traverse(x => { if (x.geometry) x.geometry.dispose(); if (x.material) [].concat(x.material).forEach(m => { if (m.map) m.map.dispose(); m.dispose() }) });
   S.limpar = g => { if (!g) return; scene.remove(g); liberar(g) };
   S.dispose = () => { cancelAnimationFrame(raf); ro.disconnect(); ctl.dispose(); liberar(scene); renderer.dispose(); renderer.domElement.remove() };
-  S.girar = on => { ctl.enabled = on };
+  S.girar = on => { ctl.enabled = on || !TOQUE; renderer.domElement.style.touchAction = on || !TOQUE ? "none" : "pan-y" };
+  /* ao entrar/sair da tela cheia o formato muda: reenquadra a câmera para a cena inteira caber */
+  S.cheia = on => { ctl.enableZoom = on; S.girar(on); setTimeout(() => S.voar(o.cam || [0, 6, 20], o.alvo || [0, 2, 0], 700), 380) };
   C3.push(S); return S;
 }
 /* rótulo em sprite (texto sempre de frente para a câmera) */
@@ -51,7 +56,7 @@ function rotulo(txt, { cor = "#8a8f97", px = 24, alt = .38, peso = 500, fonte = 
   const c = document.createElement("canvas"), x = c.getContext("2d"), f = `${peso} ${px * 2}px ${fonte}`; x.font = f;
   const w = Math.ceil(x.measureText(txt).width) + 8; c.width = w; c.height = Math.ceil(px * 2.6); x.font = f; x.fillStyle = cor; x.textBaseline = "middle"; x.fillText(txt, 4, c.height / 2);
   const tx = new THREE.CanvasTexture(c); tx.encoding = THREE.sRGBEncoding; tx.anisotropy = 4;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tx, transparent: true, depthWrite: false })); s.scale.set(alt * w / c.height, alt, 1); if (esq) s.center.set(0, .5); return s }
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tx, transparent: true, depthWrite: false })); alt *= innerWidth <= 760 ? 1.55 : 1; /* celular: câmera mais longe, rótulos maiores */ s.scale.set(alt * w / c.height, alt, 1); if (esq) s.center.set(0, .5); return s }
 function piso(S, tam = 30) { const g = new THREE.GridHelper(tam, tam, 0x2b2720, 0x15181d); g.material.transparent = true; g.material.opacity = .5; S.scene.add(g);
   const pl = new THREE.Mesh(new THREE.CircleGeometry(tam * .55, 64), new THREE.MeshBasicMaterial({ color: 0xd6be8a, transparent: true, opacity: .025, depthWrite: false })); pl.rotation.x = -Math.PI / 2; pl.position.y = .005; S.scene.add(pl) }
 /* gradiente vertical por vértice: luminoso no topo, quase transparente na base */
@@ -128,7 +133,7 @@ function mapa3D(el, lista, { z = "liq", aoAbrir } = {}) {
   S.onLeave = ob => { ob.scale.setScalar(ob.userData.r); ob.material.emissiveIntensity = .12; queda.visible = sombra.visible = false; if (nomeTk) { S.limpar(nomeTk); nomeTk = null } };
   S.onHover = (ob, e) => { const f = ob.userData.f;
     tipOn(e.clientX, e.clientY, tipLinhas(`${f.t} <span style="font-size:.8rem;color:${TCOR[f.tipo]}">· ${esc(f.tipo)}</span>`, [["DY 12m", pct(f.dy12)], ["P/VP", nf(f.pvp)], [EIXOZ[zk][0], zk === "liq" ? big(f.liq) : zk === "ret" ? pct(f.ret12, 1) : int(f.cotistas)], ["Patrimônio", big(f.pl)]]) + `<div class="r" style="margin-top:6px;color:var(--champ)">Clique para abrir a ficha</div>`) };
-  S.onClick = ob => { const p = ob.position; tipOff(); S.voar([p.x + 2.2, p.y + 1.4, p.z + 3.2], [p.x, p.y, p.z], 850); setTimeout(() => aoAbrir && aoAbrir(ob.userData.f), 820) };
+  S.onClick = ob => { const p = ob.position; tipOff(); S.voar([p.x + 2.2, p.y + 1.4, p.z + 3.2], [p.x, p.y, p.z], 850, true); setTimeout(() => aoAbrir && aoAbrir(ob.userData.f), 820) };
   return { S, persp: PERSP(S, { frente: [[0, 4.2, 21], [0, 4, 0]], perspectiva: [[14, 8.5, 17], [0, 3.6, 0]], topo: [[0, 24, .5], [0, 0, 0]], lado: [[22, 4.5, 0], [0, 4, 0]] }),
     setZ: k => { zk = k; rotZ(); bolas.forEach(m => { const z0 = m.position.z, z1 = zPos(m.userData.f); S.tween(800, e => m.position.z = z0 + (z1 - z0) * e) }) },
     tipos: on => bolas.forEach(m => { const vis = on.includes(m.userData.f.tipo); if (vis === m.visible) return; const r = m.userData.r;
@@ -178,10 +183,21 @@ function superficie3D(el, base, { aoEscolher } = {}) {
   const tA = rotulo("aporte mensal", { cor: "#d6be8a", alt: .42 }); tA.position.set(0, -1.1, 7.6); S.scene.add(tA);
   const tP = rotulo("prazo", { cor: "#d6be8a", alt: .42, esq: true }); tP.position.set(7.5, .5, -6.6); S.scene.add(tP);
   const tH = rotulo("altura = patrimônio projetado (escala de raiz)", { cor: "#6c737c", alt: .3, esq: true }); tH.position.set(-7, 7.9, -6); S.scene.add(tH);
-  let alvo = new Float32Array(nx * nz), atual = new Float32Array(nx * nz), vals = [], mxv = 1, cfg = base, escala = 1;
+  let alvo = new Float32Array(nx * nz), atual = new Float32Array(nx * nz), vals = [], mxv = 1, cfg = base, escala = 1, metaPat = null;
+  /* plano dourado da meta: altura = patrimônio necessário para a renda desejada; a superfície que passa dele acende */
+  const plano = new THREE.Mesh(new THREE.PlaneGeometry(14.4, 12.4), new THREE.MeshBasicMaterial({ color: 0xf2d79a, transparent: true, opacity: .18, side: THREE.DoubleSide, depthWrite: false }));
+  plano.rotation.x = -Math.PI / 2; plano.visible = false; S.scene.add(plano);
+  const borda = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-7.2, 0, -6.2), new THREE.Vector3(7.2, 0, -6.2), new THREE.Vector3(7.2, 0, 6.2), new THREE.Vector3(-7.2, 0, 6.2)]), new THREE.LineBasicMaterial({ color: 0xf2d79a, transparent: true, opacity: .7 }));
+  borda.visible = false; S.scene.add(borda); let rotMeta = null;
+  const hMeta = () => metaPat ? Math.min(7.6, Math.sqrt(metaPat / mxv) * 7.2) : 0;
+  const poePlano = () => { const on = !!metaPat; plano.visible = borda.visible = on; if (rotMeta) { S.limpar(rotMeta); rotMeta = null } if (!on) return;
+    const y = hMeta(); plano.position.y = borda.position.y = y;
+    rotMeta = rotulo(`meta · ${big(metaPat)}${metaPat > mxv ? " (acima do alcance da superfície)" : ""}`, { cor: "#f6dc9c", alt: .55, peso: 600 }); rotMeta.center.set(1, .5); rotMeta.position.set(7.2, y + .45, 6.2); S.scene.add(rotMeta) };
+  const ouro = hex("#e2b04a");
   const lo = hex("#0b2c2a"), md = hex("#1f8f76"), hi = hex("#e2c88f"), tmp = new THREE.Color();
   const pinta = () => { for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { const q = j * nx + i, k = q * 3, h = atual[q]; pos[k + 1] = h; const t = h / 7.2;
-      if (t < .5) tmp.copy(lo).lerp(md, t * 2); else tmp.copy(md).lerp(hi, (t - .5) * 2); cor[k] = tmp.r; cor[k + 1] = tmp.g; cor[k + 2] = tmp.b }
+      if (t < .5) tmp.copy(lo).lerp(md, t * 2); else tmp.copy(md).lerp(hi, (t - .5) * 2);
+      if (metaPat && vals[i] && vals[i][j] >= metaPat) tmp.lerp(ouro, .78); cor[k] = tmp.r; cor[k + 1] = tmp.g; cor[k + 2] = tmp.b }
     geo.attributes.position.needsUpdate = geo.attributes.color.needsUpdate = true; geo.computeVertexNormals(); fio.geometry.dispose(); fio.geometry = new THREE.WireframeGeometry(geo) };
   const poeMarca = () => { const i = Math.min(nx - 1, Math.max(0, cfg.aporte / 250)), j = Math.min(nz - 1, Math.max(0, cfg.anos - 1)), i0 = Math.floor(i), j0 = Math.floor(j);
     const h = atual[Math.round(j) * nx + Math.round(i)] || 0, x = -7 + i * 14 / (nx - 1), z = 6 - j * 12 / (nz - 1); marca.position.set(x, h + .22, z); halo.position.set(x, .02, z);
@@ -189,14 +205,14 @@ function superficie3D(el, base, { aoEscolher } = {}) {
   const calc = b => { cfg = b; vals = APS.map(a => { const p = projetar(Object.assign({}, b, { aporte: a, anos: ANOS })); return p.anual.map(x => x.pat) });
     mxv = Math.max(...vals.map(c => c[ANOS - 1])) || 1;
     for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) alvo[j * nx + i] = Math.sqrt((vals[i][j] || 0) / mxv) * 7.2;
-    const de = atual.slice(); S.tween(700, e => { for (let q = 0; q < atual.length; q++) atual[q] = de[q] + (alvo[q] - de[q]) * e; pinta(); poeMarca() }) };
+    const de = atual.slice(); poePlano(); S.tween(700, e => { for (let q = 0; q < atual.length; q++) atual[q] = de[q] + (alvo[q] - de[q]) * e; pinta(); poeMarca() }) };
   const ponto = hit => { const i = Math.round((hit.point.x + 7) / 14 * (nx - 1)), j = Math.round((6 - hit.point.z) / 12 * (nz - 1)); return [Math.min(nx - 1, Math.max(0, i)), Math.min(nz - 1, Math.max(0, j))] };
   S.onHover = (ob, e, hit) => { const [i, j] = ponto(hit), v = vals[i][j], q = j * nx + i; mira.visible = true; mira.position.set(X(i), atual[q] + .14, Z(j));
-    tipOn(e.clientX, e.clientY, tipLinhas(`${brl(APS[i], 0)}/mês · ${j + 1} ${j ? "anos" : "ano"}`, [["Patrimônio projetado", `<span style="color:var(--champ2)">${brl(v, 0)}</span>`], ["Renda/mês ao final", `<span class="pos">${brl(v * cfg.dy / 1200)}</span>`]]) + `<div class="r" style="margin-top:6px;color:var(--champ)">Clique para usar este cenário · simulação</div>`) };
+    tipOn(e.clientX, e.clientY, tipLinhas(`${brl(APS[i], 0)}/mês · ${j + 1} ${j ? "anos" : "ano"}`, [["Patrimônio projetado", `<span style="color:var(--champ2)">${brl(v, 0)}</span>`], ["Renda/mês ao final", `<span class="pos">${brl(v * cfg.dy / 1200)}</span>`]].concat(metaPat ? [["Meta", v >= metaPat ? `<span style="color:#f6dc9c">✓ atinge</span>` : `faltam ${brl(metaPat - v, 0)}`]] : [])) + `<div class="r" style="margin-top:6px;color:var(--champ)">Clique para usar este cenário · simulação</div>`) };
   S.onLeave = () => { mira.visible = false };
   S.onClick = (ob, e, hit) => { const [i, j] = ponto(hit); if (aoEscolher) aoEscolher(APS[i], j + 1) };
   calc(base);
-  return { S, set: calc, persp: PERSP(S, { perspectiva: [[15, 11, 15], [0, 3, 0]], frente: [[0, 5, 22], [0, 3, 0]], lado: [[22, 6, 0], [0, 3, 0]], topo: [[0, 24, .5], [0, 0, 0]] }) } }
+  return { S, set: calc, meta: v => { metaPat = v > 0 ? v : null; poePlano(); pinta() }, persp: PERSP(S, { perspectiva: [[15, 11, 15], [0, 3, 0]], frente: [[0, 5, 22], [0, 3, 0]], lado: [[22, 6, 0], [0, 3, 0]], topo: [[0, 24, .5], [0, 0, 0]] }) } }
 
 /* ============ 5. Carteira: anel (ângulo = valor, altura = renda mensal) ============ */
 function anel3D(el, partes) {
