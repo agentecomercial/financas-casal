@@ -178,97 +178,184 @@ function faixaRend(f) { const u = f.ultDiv; if (!u) return "";
     <div><div class="lbl">Últimos 12 pagamentos</div><div class="ybars" title="Rendimento por cota, do mais antigo ao mais recente">${ult.map((d, i) => `<i style="height:${Math.max(6, d[1] / mx * 100)}%;animation-delay:${i * 35}ms" title="${dt(d[0])}: ${brl(d[1], 4)}"></i>`).join("")}</div>
       <small>${vsm == null ? "" : `<span class="${vsm >= 0 ? "pos" : "neg"}">${sgn(vsm)}${pct(Math.abs(vsm), 1)}</span> vs. média de 12 meses (${brl(media, 4)})`}</small></div></div>` }
 
-/* ============ Simulador ============ */
+/* ============ Simulador — calculadora conectada: tudo sai de simular() (central-dados.js) ============ */
 function simDefault(t) { const f = BY[t] || BY.MXRF11 || F[0]; return { t: f.t, modo: "cotas", qtd: 100, cap: Math.round(f.preco * 100), preco: f.preco, dy: f.dy12 || 10, aporte: 500, anos: 10, reinv: true, valor: 0, obj: "renda", meta: 2000 } }
 /* cálculo inverso: quanto investir para receber R$ X por mês com o FII e o DY escolhidos */
 function calcMeta(s) { const f = BY[s.t], rc = s.preco * s.dy / 1200; if (!(rc > 0) || !(s.meta > 0)) return null;
   const cotas = Math.ceil(s.meta / rc), inv = cotas * s.preco, rm = cotas * rc, ult = f && f.ultDiv ? f.ultDiv.v : null, cotasU = ult ? Math.ceil(s.meta / ult) : null;
-  const p = projetar(Object.assign({}, s, { anos: 40 })); let mes = null; for (const r of p.serie) if (r[1] * s.dy / 1200 >= s.meta) { mes = r[0]; break }
-  return { cotas, inv, rm, ra: rm * 12, ult, cotasU, invU: cotasU ? cotasU * s.preco : null, mes } }
+  const hit = simular(s, 480).serie.find(p => p.renda >= s.meta);
+  return { cotas, inv, rm, ra: rm * 12, ult, cotasU, invU: cotasU ? cotasU * s.preco : null, mes: hit ? hit.m : null } }
 const prazoTxt = m => m == null ? "mais de 40 anos" : m === 0 ? "já na compra" : (m >= 12 ? Math.floor(m / 12) + (m >= 24 ? " anos" : " ano") : "") + (m % 12 ? (m >= 12 ? " e " : "") + (m % 12) + (m % 12 === 1 ? " mês" : " meses") : "");
 const rng = (id, rot, v, mn, mx, st, fmt) => `<label class="full"><span class="rv"><span class="lbl">${rot}</span><b id="${id}v">${fmt(v)}</b></span><input type="range" id="${id}" min="${mn}" max="${mx}" step="${st}" value="${v}" style="--p:${(v - mn) / (mx - mn) * 100}%"></label>`;
+/* controles: chave, nome, mín, máx, passo, formato · SDOCK = o mesmo controle no painel flutuante da superfície */
+const SCTL = [["aporte", "Aporte mensal", 0, 5000, 50, v => brl(+v, 0)], ["anos", "Prazo", 1, 40, 1, v => +v + (+v === 1 ? " ano" : " anos")], ["dy", "DY anual usado", 0, 25, .1, v => pct(+v, 1)], ["valor", "Valorização anual da cota", -5, 10, .5, v => pct(+v, 1)]];
+const SDOCK = { aporte: "dap", anos: "danos", dy: "ddy" };
+const SCOR = { ini: "#D6BE8A", aport: "#7FA7D9", rend: "#46C2A6", valor: "#A895E0" };
+const SFMT = { patFim: v => brl(v, 0), rendaFim: v => brl(v), rendaHoje: v => brl(v), rendaAnoFim: v => brl(v, 0), rendaAnoHoje: v => brl(v), cotFim: v => int(v), rendTot: v => brl(v, 0), mInv: v => brl(v, 0), mCot: v => int(v) };
+let SR = null, SANT = null, SMEX = "", sTR = 0;
+const numBR = v => { v = String(v).trim(); if (!v) return NaN; if (v.includes(",")) v = v.replace(/\./g, "").replace(",", "."); else if (/^\d{1,3}(\.\d{3})+$/.test(v)) v = v.replace(/\./g, ""); return +v };
+const cap1 = t => t.replace(/^./, c => c.toUpperCase());
+
 VIEWS.simulador = () => { if (!S.sim || (S.arg && S.sim.t !== S.arg.toUpperCase())) S.sim = simDefault((S.arg || "MXRF11").toUpperCase()); const s = S.sim, f = BY[s.t];
-  return `<p class="eyebrow">Simulação ${T("sim")}</p><h2 class="ttl">Simulador de compra</h2><p class="lead">Monte a compra e explore os cenários. As projeções partem do DY dos últimos 12 meses e <b style="color:var(--ink)">não são garantia de retorno</b>.</p>
-  <div class="grid g32"><section class="glass pad"><div class="form">
-      <label class="full"><span class="lbl">Fundo</span><div class="ac"><input id="sfii" value="${esc(s.t)}${f ? " — " + esc(f.nm) : ""}" autocomplete="off"><div class="list" id="sacl" hidden></div></div></label>
-      <div class="full"><div class="seg" id="smodo" style="width:100%">${[["cotas", "Por quantidade de cotas"], ["cap", "Por capital"]].map(([v, t]) => `<button data-v="${v}" class="${s.modo === v ? "on" : ""}" style="flex:1">${t}</button>`).join("")}</div></div>
-      ${s.modo === "cotas" ? `<label><span class="lbl">Cotas</span><input id="sqtd" inputmode="numeric" value="${s.qtd}"></label>` : `<label><span class="lbl">Capital (R$)</span><input id="scap" inputmode="decimal" value="${nf(s.cap, 2)}"></label>`}
-      <label><span class="lbl">Preço por cota (R$)</span><input id="sprec" inputmode="decimal" value="${nf(s.preco, 2)}"></label>
-      ${rng("sap", "Aporte mensal", s.aporte, 0, 5000, 50, v => brl(+v, 0))}${rng("sanos", "Prazo", s.anos, 1, 40, 1, v => v + (v == 1 ? " ano" : " anos"))}
-      ${rng("sdy", "DY anual usado", s.dy, 0, 25, .1, v => pct(+v, 1))}${rng("sval", "Valorização anual da cota", s.valor, -5, 10, .5, v => pct(+v, 1))}
-      <label class="full switch"><input type="checkbox" id="sreinv"${s.reinv ? " checked" : ""}> Reinvestir os rendimentos todo mês</label></div>
-      <p class="cnt" style="margin:14px 0 0">Valores iniciais: cotação de ${f ? dt((f.cotEm || "").slice(0, 10)) : "—"} e DY 12m de ${f ? pct(f.dy12) : "—"} ${T("real")} — ajuste à vontade.</p></section>
-    <section class="glass pad" style="display:flex;flex-direction:column;gap:14px">
-      <div class="seg" id="sobj" style="width:100%">${[["renda", "💰 Quanto vou receber"], ["meta", "🎯 Quanto preciso investir"]].map(([v, x]) => `<button data-v="${v}" class="${s.obj === v ? "on" : ""}" style="flex:1">${x}</button>`).join("")}</div>
-      <div id="rRenda"${s.obj === "meta" ? " hidden" : ""} style="display:flex;flex-direction:column;gap:14px"><div class="res">
-        <div><span class="lbl">Valor investido</span><b class="num" id="r1">—</b></div><div><span class="lbl">Cotas</span><b class="num" id="r2">—</b></div>
-        <div><span class="lbl">Renda mensal hoje</span><b class="num pos" id="r3">—</b></div><div><span class="lbl">Renda anual hoje</span><b class="num pos" id="r4">—</b></div>
-        <div class="hl"><span class="lbl">Patrimônio ao final</span><b class="num" id="r5">—</b></div><div class="hl"><span class="lbl">Renda mensal ao final</span><b class="num" id="r6">—</b></div></div>
-        <p class="note" id="rnota"></p></div>
-      <div id="rMeta"${s.obj === "meta" ? "" : " hidden"} style="display:flex;flex-direction:column;gap:12px">
-        <div><span class="lbl">🎯 Rendimento mensal desejado</span><div class="metachips">${[500, 1000, 2000, 5000].map(v => `<button class="pill${s.meta === v ? " on" : ""}" data-meta="${v}">${brl(v, 0)}</button>`).join("")}
-          <label class="mfree"><span>R$</span><input id="smeta" inputmode="decimal" value="${nf(s.meta, 0)}" aria-label="Outro valor por mês"><span>/mês</span></label></div></div>
-        <div class="mbig"><span class="lbl">💰 Investimento estimado necessário ${T("sim")}</span><b class="num" id="m1">—</b><small id="msub"></small></div>
-        <div class="res"><div><span class="lbl">Cotas necessárias</span><b class="num" id="m2">—</b></div><div><span class="lbl">Valor por cota</span><b class="num" id="m3">—</b></div>
-          <div><span class="lbl">Renda mensal estimada</span><b class="num pos" id="m4">—</b></div><div><span class="lbl">Renda anual estimada</span><b class="num pos" id="m5">—</b></div>
-          <div><span class="lbl">DY usado</span><b class="num" id="m6">—</b></div><div class="hl"><span class="lbl">Chega lá em</span><b class="num" id="m7" style="font-size:1.25rem">—</b></div></div>
-        <p class="cnt" id="mult" style="margin:0"></p>
-        <details class="prem"><summary>Premissas do cálculo</summary><ul id="mprem"></ul></details>
-        <p class="note" style="margin:0">Estimativa baseada no DY usado — não é garantia de recebimento. Rendimentos de FII variam mês a mês.</p></div></section></div>
-  <section class="glass stage" id="st-sup" style="height:560px;margin-top:18px"><div class="hud"><div><div class="lbl">Superfície de cenários ${T("sim")}</div><div class="cnt" style="margin-top:4px;max-width:420px">Patrimônio projetado para cada combinação de aporte mensal (R$ 0 a R$ 3.000) e prazo (1 a 30 anos). A esfera branca é o seu cenário. Clique na superfície para aplicar outro.</div></div></div>
+  return `<p class="eyebrow">Simulação ${T("sim")}</p><h2 class="ttl">Simulador de compra</h2><p class="lead">Calculadora conectada: mexa em qualquer variável e veja o resultado <b style="color:var(--ink)">antes → agora</b> e o futuro redesenhado na projeção. As projeções partem do DY dos últimos 12 meses e <b style="color:var(--ink)">não são garantia de retorno</b>.</p>
+  <div class="lay">
+    <section class="glass pad">
+      <label style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Fundo</span><div class="ac"><input id="sfii" class="fsel" style="width:100%;font-size:1rem;padding:11px 13px" value="${esc(s.t)}${f ? " — " + esc(f.nm) : ""}" autocomplete="off"><div class="list" id="sacl" hidden></div></div></label>
+      <div class="seg" id="smodo" style="width:100%;margin:14px 0 12px">${[["cotas", "Por quantidade de cotas"], ["cap", "Por capital"]].map(([v, t]) => `<button data-v="${v}" class="${s.modo === v ? "on" : ""}" style="flex:1">${t}</button>`).join("")}</div>
+      <div class="dup"><label><span class="lbl" id="lA">${s.modo === "cotas" ? "Cotas" : "Capital (R$)"}</span><input id="inA" inputmode="decimal"></label><span class="op" id="opA">${s.modo === "cotas" ? "×" : "÷"}</span><label><span class="lbl">Preço por cota (R$)</span><input id="inP" inputmode="decimal"></label></div>
+      <div class="capital" id="capBox"></div>
+      ${SCTL.map(([k, n, mn, mx, st, fmt]) => `<div class="ctl" id="c_${k}"><span class="nome">${n}</span><span class="val" id="v_${k}">${fmt(s[k])}</span><input type="range" id="r_${k}" min="${mn}" max="${mx}" step="${st}" value="${s[k]}" style="--p:${(s[k] - mn) / (mx - mn) * 100}%"><span class="efe" id="e_${k}"></span></div>`).join("")}
+      <div class="ctl" id="c_reinv"><label class="switch" style="grid-column:1/-1"><input type="checkbox" id="r_reinv"${s.reinv ? " checked" : ""}> Reinvestir os rendimentos todo mês</label><span class="efe" id="e_reinv"></span></div>
+      <div class="sub3"><span class="lbl">E se… (mostra o efeito antes de aplicar)</span><div class="ese" id="ese"></div></div>
+      <p class="cnt" style="margin:14px 0 0">Valores iniciais: cotação de ${f ? dt((f.cotEm || "").slice(0, 10)) : "—"} e DY 12m de ${f ? pct(f.dy12) : "—"} ${T("real")} — ajuste à vontade.</p>
+    </section>
+    <section class="glass pad vivo">
+      <div class="seg" id="sobj" style="width:100%;margin-bottom:14px">${[["renda", "💰 Quanto vou receber"], ["meta", "🎯 Quanto preciso investir"]].map(([v, x]) => `<button data-v="${v}" class="${s.obj === v ? "on" : ""}" style="flex:1">${x}</button>`).join("")}</div>
+      <div id="pRenda"${s.obj === "meta" ? " hidden" : ""}>
+        <div class="dup" style="margin-bottom:14px"><label><span class="lbl">Valor investido (R$)</span><input id="inInv" inputmode="decimal"></label><span class="op">=</span><label><span class="lbl">Cotas</span><input id="inCot" inputmode="numeric"></label></div>
+        <div class="kbig">
+          <div id="k_patFim" class="hero"><span class="lbl">Patrimônio ao final</span><span class="v num" id="o_patFim">—</span><span class="ant" id="a_patFim"></span></div>
+          <div id="k_rendaFim"><span class="lbl">Renda mensal ao final</span><span class="v num" id="o_rendaFim">—</span><span class="ant" id="a_rendaFim"></span></div>
+          <div id="k_rendaHoje"><span class="lbl">Renda mensal hoje</span><span class="v num" id="o_rendaHoje">—</span><span class="ant" id="a_rendaHoje"></span></div>
+          <div id="k_rendaAnoFim"><span class="lbl">Renda anual ao final</span><span class="v num" id="o_rendaAnoFim">—</span><span class="ant" id="a_rendaAnoFim"></span></div></div>
+        <div class="kmini"><div id="k_rendaAnoHoje"><span class="lbl">Renda anual hoje</span><b id="o_rendaAnoHoje">—</b><span class="ant" id="a_rendaAnoHoje"></span></div>
+          <div id="k_cotFim"><span class="lbl">Cotas ao final</span><b id="o_cotFim">—</b><span class="ant" id="a_cotFim"></span></div>
+          <div id="k_rendTot"><span class="lbl">Rendimentos no período</span><b id="o_rendTot">—</b><span class="ant" id="a_rendTot"></span></div></div>
+        <div class="sub3"><span class="lbl">De onde vem o patrimônio final</span><div class="barra" id="bPat"></div><div class="leg" id="lPat"></div></div>
+        <div class="sub3"><span class="lbl">De onde vêm as cotas</span><div class="barra" id="bCot"></div><div class="leg" id="lCot"></div></div>
+      </div>
+      <div id="pMeta"${s.obj === "meta" ? "" : " hidden"}>
+        <span class="lbl">🎯 Rendimento mensal desejado</span><div class="metachips">${[500, 1000, 2000, 5000].map(v => `<button class="pill${s.meta === v ? " on" : ""}" data-meta="${v}">${brl(v, 0)}</button>`).join("")}<label class="mfree"><span>R$</span><input id="smeta" inputmode="decimal" value="${nf(s.meta, 0)}" aria-label="Outro valor por mês"><span>/mês</span></label></div>
+        <div class="kbig" style="margin-top:14px"><div class="hero" id="k_mInv"><span class="lbl">💰 Investimento necessário</span><span class="v num" id="o_mInv">—</span><span class="ant" id="a_mInv"></span></div>
+          <div id="k_mCot"><span class="lbl">Cotas necessárias</span><span class="v num" id="o_mCot">—</span><span class="ant" id="a_mCot"></span></div>
+          <div id="k_mPrazo" style="grid-column:1/-1"><span class="lbl" id="l_mPrazo"></span><span class="v num" id="o_mPrazo" style="font-size:1.7rem">—</span><span class="ant" id="msub"></span></div></div>
+        <p class="cnt" id="mult" style="margin:12px 0 0"></p>
+        <p class="note" style="margin:10px 0 0">Estimativa baseada no DY usado — não é garantia de recebimento. Rendimentos de FII variam mês a mês.</p>
+      </div>
+      <details class="prem sub3"><summary>Premissas do cálculo</summary><ul id="sprem"></ul></details>
+    </section></div>
+  <section class="glass stage" id="st-proj" style="height:540px;margin-top:18px"><div class="hud"><div><div class="lbl"><span id="pjL">Patrimônio projetado · ao final</span> ${T("sim")}</div><div class="big num" id="pjV">R$ 0</div><div class="delta" id="pjD">&nbsp;</div></div>
+      <div class="pjleg"><span><i style="background:#F2E3BD"></i>Patrimônio</span><span><i style="background:#46C2A6;opacity:.7"></i>Rendimentos reinvestidos</span><span><i class="tr" style="border-color:#7FA7D9"></i>Total aportado</span><span><i class="tr" style="border-color:rgba(255,255,255,.4)"></i>Cenário anterior</span></div></div>
+    ${xp()}${ctrls("proj", [["perspectiva", "Perspectiva"], ["frente", "Frontal"], ["lado", "Lateral"], ["topo", "Topo"]], "perspectiva")}${dica("Arraste para girar · passe o mouse pelos meses · duplo clique aproxima")}</section>
+  <section class="glass stage" id="st-sup" style="height:560px;margin-top:18px"><div class="hud"><div><div class="lbl">Superfície de cenários ${T("sim")}</div><div class="cnt" style="margin-top:4px;max-width:420px">Mesmo cálculo: patrimônio para cada aporte mensal (R$ 0 a R$ 3.000) × prazo (1 a 30 anos) com as suas cotas, DY, valorização e reinvestimento. A esfera branca é o seu cenário. Clique na superfície para aplicar outro.</div></div></div>
     ${xp()}
     <div class="dock${MOB() ? " min" : ""}" id="supDock"><div class="dk-h"><div class="lbl" style="color:var(--champ)">Seu cenário ${T("sim")}</div><button class="dk-tg" id="dkTg" aria-label="Recolher ou abrir os controles">${MOB() ? "▴" : "▾"}</button></div>
-      ${rng("dap", "Aporte mensal", s.aporte, 0, 5000, 50, v => brl(+v, 0))}${rng("danos", "Prazo", s.anos, 1, 40, 1, v => v + (v == 1 ? " ano" : " anos"))}${rng("ddy", "DY anual usado", s.dy, 0, 25, .1, v => pct(+v, 1))}
+      ${rng("dap", "Aporte mensal", s.aporte, 0, 5000, 50, SCTL[0][5])}${rng("danos", "Prazo", s.anos, 1, 40, 1, SCTL[1][5])}${rng("ddy", "DY anual usado", s.dy, 0, 25, .1, SCTL[2][5])}
       <div class="dres"><div><span class="lbl" id="dl5">Patrimônio ao final</span><b class="num" id="d5">—</b></div><div><span class="lbl" id="dl6">Renda/mês ao final</span><b class="num" id="d6" style="color:var(--em)">—</b></div></div></div>
     ${ctrls("sup", [["perspectiva", "Perspectiva"], ["frente", "Por aporte"], ["lado", "Por prazo"], ["topo", "Mapa de calor"]], "perspectiva")}${dica("Arraste para girar · passe o mouse na superfície · clique para aplicar")}</section>
   <div class="grid g2" style="margin-top:18px"><section class="glass pad"><div class="lbl" style="margin-bottom:12px">Cenários comparados ${T("sim")}</div><div id="scen"></div></section>
     <section class="glass pad"><div class="lbl" style="margin-bottom:6px">Ano a ano ${T("sim")}</div><div style="overflow:auto;max-height:330px" id="sano"></div></section></div>
-  <p class="foot">Premissas: DY constante; rendimento mensal = valor das cotas × DY ÷ 12; reinvestimento compra cotas inteiras ao preço do mês; sobras ficam em caixa; sem impostos (rendimentos de FII para pessoa física costumam ser isentos de IR, mas o ganho de capital na venda é tributado) e sem corretagem. Rendimentos de FII variam mês a mês.</p>` };
-function simRender(mexeuSup) { const s = S.sim, p = projetar(s), inv = p.ini.inv, rm = inv * s.dy / 1200;
-  contar(document.getElementById("r1"), inv, v => brl(v), 600); contar(document.getElementById("r2"), p.ini.cotas, int, 600); contar(document.getElementById("r3"), rm, v => brl(v), 600);
-  contar(document.getElementById("r4"), rm * 12, v => brl(v), 600); contar(document.getElementById("r5"), p.fim[1], v => brl(v, 0), 800); contar(document.getElementById("r6"), p.rendMesFim, v => brl(v), 800);
-  const g = id => document.getElementById(id), M = s.obj === "meta" ? calcMeta(s) : null, f = BY[s.t];
-  if (s.obj === "meta") {
-    if (M) { contar(g("m1"), M.inv, v => brl(v, 0), 700); contar(g("m2"), M.cotas, int, 600); g("m3").textContent = brl(s.preco); contar(g("m4"), M.rm, v => brl(v), 600); contar(g("m5"), M.ra, v => brl(v), 600); g("m6").textContent = pct(s.dy, 2);
-      g("m7").textContent = prazoTxt(M.mes); g("msub").innerHTML = `para receber <b style="color:var(--ink)">${brl(s.meta, 0)}/mês</b> com ${esc(s.t)}`;
-      g("mult").innerHTML = M.ult ? `Pelo último rendimento (${brl(M.ult, 2)}/cota em ${dt(f.ultDiv.d)}): <b style="color:var(--ink)">${int(M.cotasU)} cotas · ${brl(M.invU, 0)}</b>.` : "";
-      g("mprem").innerHTML = [`Fundo: <b>${esc(s.t)}</b>${f ? " — " + esc(f.nm) : ""}, cotação de ${brl(s.preco)}.`, `DY usado: <b>${pct(s.dy, 2)}</b> ao ano${f && Math.abs(s.dy - (f.dy12 || 0)) < .05 ? " (rendimentos reais dos últimos 12 meses ÷ cotação)" : " (ajustado por você)"}, constante no tempo.`,
-        `Renda por cota = preço × DY ÷ 12 = ${brl(s.preco * s.dy / 1200, 4)}/mês.`, `Cotas = meta ÷ renda por cota, arredondado para cima (cotas inteiras).`,
-        `"Chega lá em": parte da compra montada ao lado + ${brl(s.aporte, 0)}/mês${s.reinv ? ", reinvestindo os rendimentos" : ", sem reinvestir"}${s.valor ? `, valorização de ${pct(s.valor, 1)} ao ano` : ""}.`, "Sem impostos, corretagem ou vacância; rendimentos de FII variam mês a mês."].map(x => `<li>${x}</li>`).join("") }
-    else { g("m1").textContent = "—"; g("msub").textContent = "Informe um DY maior que zero e uma meta."; ["m2", "m4", "m5", "m7"].forEach(id => g(id).textContent = "—") }
-    g("dl5").textContent = "Investimento necessário"; g("dl6").textContent = "Chega lá em"; if (M) { contar(g("d5"), M.inv, v => brl(v, 0), 600); g("d6").textContent = prazoTxt(M.mes) } }
-  else { g("dl5").textContent = "Patrimônio ao final"; g("dl6").textContent = "Renda/mês ao final"; contar(g("d5"), p.fim[1], v => brl(v, 0), 600); contar(g("d6"), p.rendMesFim, v => brl(v), 600) }
-  if (API.sup && API.sup.meta) API.sup.meta(M ? M.inv : null);
-  document.getElementById("rnota").innerHTML = `Em <b>${s.anos} ${s.anos === 1 ? "ano" : "anos"}</b>, com <b>${brl(s.aporte, 0)}/mês</b>${s.reinv ? " e reinvestindo" : " sem reinvestir"}: ${brl(p.fim[2], 0)} aportados e ${brl(p.fim[3], 0)} em rendimentos acumulados. Simulação — não é promessa de retorno.`;
-  const cen = [["Só a compra", 0, false], ["Só a compra, reinvestindo", 0, true], [`+ ${brl(s.aporte, 0)}/mês`, s.aporte, false], [`+ ${brl(s.aporte, 0)}/mês, reinvestindo`, s.aporte, true]].map(([t, a, r]) => [t, projetar(Object.assign({}, s, { aporte: a, reinv: r })).fim]), top = Math.max(...cen.map(c => c[1][1])) || 1;
-  document.getElementById("scen").innerHTML = cen.map(([t, fim]) => `<div style="margin:12px 0"><div style="display:flex;justify-content:space-between;font-size:.84rem"><span style="color:var(--ink2)">${t}</span><b style="font-weight:500">${brl(fim[1], 0)}</b></div>
-    <div style="height:3px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden;margin-top:8px"><i style="display:block;height:100%;width:${fim[1] / top * 100}%;background:linear-gradient(90deg,var(--champ),var(--champ2));transition:width .7s var(--ease)"></i></div><div class="cnt" style="margin-top:4px">aportado ${brl(fim[2], 0)} · rendimentos ${brl(fim[3], 0)}</div></div>`).join("");
-  document.getElementById("sano").innerHTML = `<table class="yt"><thead><tr><th>Ano</th><th class="n">Cotas</th><th class="n">Patrimônio</th><th class="n">Aportado</th><th class="n">Renda/mês</th></tr></thead><tbody>${p.anual.map(a => `<tr><td>${a.ano}</td><td class="n">${int(a.cotas)}</td><td class="n">${brl(a.pat, 0)}</td><td class="n">${brl(a.aportado, 0)}</td><td class="n pos">${brl(a.rendMes)}</td></tr>`).join("")}</tbody></table>`;
-  if (mexeuSup && API.sup) API.sup.set(s) }
-AFTER.simulador = () => { const s = S.sim, n = v => +String(v).replace(/\./g, "").replace(",", "."), g = id => document.getElementById(id);
-  /* controles do formulário e do painel flutuante (tela cheia) andam juntos */
-  const PAR = { sap: "dap", sanos: "danos", sdy: "ddy", dap: "sap", danos: "sanos", ddy: "sdy" };
-  const poe = (id, v, fmt) => { const el = g(id); if (!el) return; el.value = v; el.style.setProperty("--p", (v - el.min) / (el.max - el.min) * 100 + "%"); g(id + "v").textContent = fmt(+v) };
-  const sl = (id, k, fmt) => { const el = g(id); if (!el) return; el.oninput = () => { s[k] = +el.value; poe(id, el.value, fmt); if (PAR[id]) poe(PAR[id], el.value, fmt); simRender(true) } };
-  const fA = v => brl(v, 0), fY = v => v + (v === 1 ? " ano" : " anos"), fD = v => pct(v, 1);
-  sl("sap", "aporte", fA); sl("sanos", "anos", fY); sl("sdy", "dy", fD); sl("sval", "valor", fD); sl("dap", "aporte", fA); sl("danos", "anos", fY); sl("ddy", "dy", fD);
+  <p class="foot">Premissas: DY constante; rendimento mensal = cotas × preço do mês × DY ÷ 12; aportes e rendimentos reinvestidos compram cotas inteiras ao preço do mês e a sobra fica em caixa para o mês seguinte; sem impostos (rendimentos de FII para pessoa física costumam ser isentos de IR, mas o ganho de capital na venda é tributado) e sem corretagem. Rendimentos de FII variam mês a mês.</p>
+  <div class="barvivo" id="barvivo"></div><div class="barvivo-sp"></div>` };
 
-  const tx = () => { if (g("sqtd")) s.qtd = Math.max(1, Math.floor(n(g("sqtd").value)) || 1); if (g("scap")) s.cap = n(g("scap").value) || 0; s.preco = n(g("sprec").value) || s.preco; s.reinv = g("sreinv").checked; simRender(true) };
-  ["sqtd", "scap", "sprec", "sreinv"].forEach(id => { const el = g(id); if (el) el.oninput = el.onchange = tx });
-  document.querySelectorAll("#smodo button").forEach(b => b.onclick = () => { s.modo = b.dataset.v; if (s.modo === "cap") s.cap = Math.round(s.qtd * s.preco); rota() });
+/* "antes → agora" embaixo de cada número */
+function simAntes(k, novo, velho) { const el = document.getElementById("a_" + k), box = document.getElementById("k_" + k); if (!el) return;
+  if (velho == null || Math.abs(novo - velho) < .005) { if (velho == null) el.innerHTML = ""; return }
+  const d = novo - velho, p = velho ? d / velho * 100 : null;
+  el.innerHTML = `antes ${SFMT[k](velho)} → <span class="${d > 0 ? "up" : "dn"}">${d > 0 ? "▲" : "▼"} ${SFMT[k](Math.abs(d))}${p != null && isFinite(p) ? ` (${d > 0 ? "+" : "−"}${pct(Math.abs(p), 1)})` : ""}</span>`;
+  if (box) { box.classList.add("flash"); clearTimeout(box._h); box._h = setTimeout(() => box.classList.remove("flash"), 900) } }
+function simPoe(k) { const s = S.sim, g = id => document.getElementById(id); if (k === "reinv") { if (g("r_reinv")) g("r_reinv").checked = s.reinv; return }
+  const c = SCTL.find(x => x[0] === k); if (!c) return;
+  [["r_" + k, "v_" + k], SDOCK[k] ? [SDOCK[k], SDOCK[k] + "v"] : null].forEach(par => { if (!par) return; const el = g(par[0]); if (!el) return; el.value = s[k]; el.style.setProperty("--p", (s[k] - c[2]) / (c[3] - c[2]) * 100 + "%"); g(par[1]).textContent = c[5](s[k]) }) }
+function simCampos() { const s = S.sim, r = simular(s), g = id => document.getElementById(id); if (!g("inA")) return; g("inA").value = s.modo === "cotas" ? nf(s.qtd, 0) : nf(s.cap, 2); g("inP").value = nf(s.preco, 2); g("inInv").value = nf(s.modo === "cap" ? s.cap : r.capIni, 2); g("inCot").value = nf(r.cotIni, 0) }
+function simModo(m) { const s = S.sim; if (m === s.modo) return; const r = simular(s); if (m === "cap") s.cap = Math.round(r.capIni * 100) / 100; else s.qtd = r.cotIni; s.modo = m;
+  document.querySelectorAll("#smodo button").forEach(x => x.classList.toggle("on", x.dataset.v === m)); document.getElementById("lA").textContent = m === "cotas" ? "Cotas" : "Capital (R$)"; document.getElementById("opA").textContent = m === "cotas" ? "×" : "÷" }
+
+function simAtualizar(primeira) { const s = S.sim, g = id => document.getElementById(id), r = simular(s), M = s.obj === "meta" ? calcMeta(s) : null, f = BY[s.t];
+  SANT = SR ? SR.serie : null; /* o cenário anterior vira a linha tracejada da projeção */
+  const V = { patFim: r.patFim, rendaFim: r.rendaFim, rendaHoje: r.rendaHoje, rendaAnoFim: r.rendaFim * 12, rendaAnoHoje: r.rendaHoje * 12, cotFim: r.fim.cotas, rendTot: r.rendTot, mInv: M ? M.inv : null, mCot: M ? M.cotas : null };
+  for (const k of Object.keys(V)) { const el = g("o_" + k); if (!el || V[k] == null) continue; contar(el, V[k], SFMT[k], primeira ? 900 : 380); if (!primeira) simAntes(k, V[k], SR ? SR[k] : null) }
+  // 🎯 quanto preciso investir
+  g("l_mPrazo").textContent = `Com o seu plano (capital + aportes${s.reinv ? " + reinvestimento" : ""}), chega lá em`;
+  if (M) { g("o_mPrazo").textContent = prazoTxt(M.mes); g("msub").innerHTML = `para receber <b style="color:var(--ink)">${brl(s.meta, 0)}/mês</b> com ${esc(s.t)} · renda estimada ${brl(M.rm)}/mês (${brl(M.ra, 0)}/ano)`;
+    g("mult").innerHTML = M.ult ? `Pelo último rendimento (${brl(M.ult, 2)}/cota em ${dt(f.ultDiv.d)}): <b style="color:var(--ink)">${int(M.cotasU)} cotas · ${brl(M.invU, 0)}</b>.` : "" }
+  else if (s.obj === "meta") { ["o_mInv", "o_mCot", "o_mPrazo"].forEach(id => g(id).textContent = "—"); g("msub").textContent = "Informe um DY maior que zero e uma meta."; g("mult").textContent = "" }
+  // capital inicial explícito
+  g("capBox").innerHTML = s.modo === "cotas" ? `<span>Capital inicial = <b style="font-family:Inter;font-size:.8rem;color:var(--ink)">${int(r.cotIni)} × ${brl(s.preco)}</b></span><b class="num">${brl(r.capIni)}</b>`
+    : `<span>${brl(s.cap)} ÷ ${brl(s.preco)} = <b style="font-family:Inter;font-size:.8rem;color:var(--ink)">${int(r.cotIni)} cotas</b>${s.cap - r.capIni >= .01 ? ` · sobra ${brl(s.cap - r.capIni)}` : ""}</span><b class="num">${brl(r.capIni)}</b>`;
+  // campos espelhados (não mexe no que está sendo digitado)
+  const set = (id, v) => { const e = g(id); if (e && document.activeElement !== e) e.value = v };
+  set("inA", s.modo === "cotas" ? nf(s.qtd, 0) : nf(s.cap, 2)); set("inP", nf(s.preco, 2)); set("inInv", nf(s.modo === "cap" ? s.cap : r.capIni, 2)); set("inCot", nf(r.cotIni, 0));
+  // composição do patrimônio e das cotas
+  const tot = Math.max(1, r.patFim), partes = [["Capital inicial", r.capIni, SCOR.ini], ["Aportes mensais", r.aportado - r.capIni, SCOR.aport], ["Rendimentos reinvestidos", r.rendReinv, SCOR.rend], ["Valorização da cota", r.valoriz, SCOR.valor]];
+  g("bPat").innerHTML = partes.map(([, v, c]) => `<i style="width:${Math.max(0, v) / tot * 100}%;background:${c}"></i>`).join("");
+  g("lPat").innerHTML = partes.map(([n, v, c]) => `<span><i style="background:${c}"></i>${n} <b style="color:var(--ink)">${brl(v, 0)}</b></span>`).join("") + (s.reinv ? "" : `<span style="color:var(--mute)">· rendimentos recebidos em dinheiro (fora do patrimônio): <b style="color:var(--ink)">${brl(r.recebido, 0)}</b></span>`);
+  const ct = Math.max(1, r.fim.cotas), cs = [["Iniciais", r.cotIni, SCOR.ini], ["Compradas com aportes", r.cotasA, SCOR.aport], ["Compradas com rendimentos", r.cotasR, SCOR.rend]];
+  g("bCot").innerHTML = cs.map(([, v, c]) => `<i style="width:${v / ct * 100}%;background:${c}"></i>`).join("");
+  g("lCot").innerHTML = cs.map(([n, v, c]) => `<span><i style="background:${c}"></i>${n} <b style="color:var(--ink)">${int(v)}</b></span>`).join("") + (s.reinv ? `<span style="color:var(--em)">· efeito bola de neve: ${int(r.cotasR)} cotas vieram só dos rendimentos</span>` : `<span style="color:var(--mute)">· sem reinvestir, nenhuma cota vem dos rendimentos</span>`);
+  // o que cada controle está fazendo no resultado
+  const sem = k => simular(Object.assign({}, s, k)), d = (a, b) => `${a >= b ? "+" : "−"}${brl(Math.abs(a - b), 0)}`;
+  g("e_aporte").innerHTML = `Aportes somam <b>${brl(r.aportado - r.capIni, 0)}</b> no período → <b>${d(r.patFim, sem({ aporte: 0 }).patFim)}</b> no patrimônio final`;
+  g("e_anos").innerHTML = `${s.anos * 12} meses de aportes e rendimentos · cada ano a mais: <b>${d(sem({ anos: s.anos + 1 }).patFim, r.patFim)}</b>`;
+  g("e_dy").innerHTML = `Renda por cota: <b>${brl(s.preco * s.dy / 1200, 4)}/mês</b> hoje · 1 ponto de DY = <b>${d(sem({ dy: s.dy + 1 }).patFim, r.patFim)}</b> no final`;
+  g("e_valor").innerHTML = `Cota vai de ${brl(s.preco)} para <b>${brl(r.fim.preco)}</b> → valorização soma <b>${brl(r.valoriz, 0)}</b>`;
+  g("e_reinv").innerHTML = s.reinv ? `Reinvestindo: <b>${int(r.cotasR)}</b> cotas extras → <b>${d(r.patFim, sem({ reinv: false }).patFim)}</b> no patrimônio vs. sem reinvestir` : `Sem reinvestir: ${brl(r.recebido, 0)} recebidos em dinheiro · reinvestindo seriam <b>${d(sem({ reinv: true }).patFim, r.patFim)}</b> a mais de patrimônio`;
+  document.querySelectorAll(".ctl").forEach(e => e.classList.toggle("ativo", e.id === "c_" + SMEX));
+  // e se… (cards com o efeito antes de aplicar)
+  const ES = [["+ R$ 500/mês de aporte", { aporte: s.aporte + 500 }], ["+ 5 anos de prazo", { anos: Math.min(40, s.anos + 5) }], ["+ 1 ponto de DY", { dy: +(s.dy + 1).toFixed(1) }], ["Cota valorizando 3%/ano", { valor: 3 }], [s.reinv ? "Sem reinvestir" : "Reinvestindo", { reinv: !s.reinv }], ["Dobrar as cotas iniciais", s.modo === "cotas" ? { qtd: s.qtd * 2 } : { cap: s.cap * 2 }]];
+  const EI = ['<path d="M12 5v14M5 12h14"/>', '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>', '<path d="M4 17l5-5 4 4 7-8"/><path d="M15 8h5v5"/>', '<path d="M3 20h18"/><path d="M6 16V11M11 16V7M16 16V4"/>',
+    s.reinv ? '<path d="M4 4l16 16"/><path d="M20 12a8 8 0 0 1-12.5 6.6M4 12a8 8 0 0 1 12.5-6.6"/>' : '<path d="M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3"/><path d="M18 3v4h-4M6 21v-4h4"/>', '<rect x="4" y="9" width="9" height="9" rx="2"/><rect x="11" y="5" width="9" height="9" rx="2"/>'];
+  const EO = ES.map(([n, k]) => { const o = sem(k); return { n, o, dd: o.patFim - r.patFim } }), EMX = Math.max(1, ...EO.map(e => Math.abs(e.dd)));
+  g("ese").innerHTML = EO.map(({ n, o, dd }, i) => { const z = Math.abs(dd) < .5, ng = dd < 0, cl = z ? "zero" : ng ? "neg" : "pos", p = r.patFim > 0 ? dd / r.patFim * 100 : 0;
+    return `<button data-ese="${i}" class="${cl}"><span class="go">Aplicar →</span><span class="hd"><span class="ico"><svg viewBox="0 0 24 24">${EI[i]}</svg></span><span class="nm">${n}</span></span>
+      <span class="dl ${cl}">${z ? "= sem mudança" : `${ng ? "▼" : "▲"} ${big(Math.abs(dd))}<small>${ng ? "−" : "+"}${nf(Math.abs(p), Math.abs(p) < 10 ? 1 : 0)}%</small>`}</span>
+      <span class="bar"><i style="width:${Math.abs(dd) / EMX * 100}%"></i></span><span class="rd">Renda final <b>${brl(o.rendaFim)}</b>/mês</span></button>` }).join("");
+  g("ese").querySelectorAll("button").forEach(b => b.onclick = () => { const k = ES[+b.dataset.ese][1], k0 = Object.keys(k)[0]; Object.assign(s, k); SMEX = k0 === "qtd" || k0 === "cap" ? "" : k0; Object.keys(k).forEach(simPoe); simAtualizar() });
+  // premissas
+  g("sprem").innerHTML = [`Fundo <b>${esc(s.t)}</b>${f ? " — " + esc(f.nm) : ""}, cotação inicial <b>${brl(s.preco)}</b>; ${s.modo === "cotas" ? `<b>${int(s.qtd)}</b> cotas` : `capital de <b>${brl(s.cap)}</b>`} → capital investido <b>${brl(r.capIni)}</b>.`,
+    `DY usado: <b>${pct(s.dy, 2)}</b> ao ano${f && Math.abs(s.dy - (f.dy12 || 0)) < .05 ? " (rendimentos reais dos últimos 12 meses ÷ cotação)" : " (ajustado por você)"}, constante no tempo.`,
+    `Renda do mês = cotas × preço do mês × DY ÷ 12 (hoje ${brl(s.preco * s.dy / 1200, 4)} por cota).`, `Preço da cota cresce <b>${pct(s.valor, 1)}</b> ao ano (composto mês a mês).`,
+    `Aporte de <b>${brl(s.aporte, 0)}</b> todo mês, por <b>${s.anos} ${s.anos === 1 ? "ano" : "anos"}</b>; compra só cotas inteiras, a sobra fica guardada para o mês seguinte.`,
+    s.reinv ? "Rendimentos <b>reinvestidos</b>: compram novas cotas, que passam a render também." : "Rendimentos <b>não reinvestidos</b>: são recebidos em dinheiro e não entram no patrimônio.",
+    ...(s.obj === "meta" ? ["Cotas necessárias = meta ÷ renda por cota, arredondado para cima (cotas inteiras)."] : []),
+    "Sem impostos, corretagem ou vacância. Estimativa — rendimentos de FII variam mês a mês."].map(x => `<li>${x}</li>`).join("");
+  // painel flutuante da superfície
+  if (s.obj === "meta") { g("dl5").textContent = "Investimento necessário"; g("dl6").textContent = "Chega lá em"; if (M) { contar(g("d5"), M.inv, v => brl(v, 0), 600); g("d6").textContent = prazoTxt(M.mes) } }
+  else { g("dl5").textContent = "Patrimônio ao final"; g("dl6").textContent = "Renda/mês ao final"; contar(g("d5"), r.patFim, v => brl(v, 0), 600); contar(g("d6"), r.rendaFim, v => brl(v), 600) }
+  // cenários comparados e ano a ano (mesmo cálculo)
+  const cen = [["Só a compra", 0, false], ["Só a compra, reinvestindo", 0, true], [`+ ${brl(s.aporte, 0)}/mês`, s.aporte, false], [`+ ${brl(s.aporte, 0)}/mês, reinvestindo`, s.aporte, true]].map(([t, a, re]) => [t, simular(Object.assign({}, s, { aporte: a, reinv: re }))]), top = Math.max(...cen.map(c => c[1].patFim)) || 1;
+  g("scen").innerHTML = cen.map(([t, x]) => `<div style="margin:12px 0"><div style="display:flex;justify-content:space-between;font-size:.84rem"><span style="color:var(--ink2)">${t}</span><b style="font-weight:500">${brl(x.patFim, 0)}</b></div>
+    <div style="height:3px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden;margin-top:8px"><i style="display:block;height:100%;width:${x.patFim / top * 100}%;background:linear-gradient(90deg,var(--champ),var(--champ2));transition:width .7s var(--ease)"></i></div><div class="cnt" style="margin-top:4px">aportado ${brl(x.aportado, 0)} · rendimentos ${brl(x.rendTot, 0)}</div></div>`).join("");
+  g("sano").innerHTML = `<table class="yt"><thead><tr><th>Ano</th><th class="n">Cotas</th><th class="n">Patrimônio</th><th class="n">Aportado</th><th class="n">Renda/mês</th></tr></thead><tbody>${r.serie.filter(p => p.m && p.m % 12 === 0).map(p => `<tr><td>${p.m / 12}</td><td class="n">${int(p.cotas)}</td><td class="n">${brl(p.pat, 0)}</td><td class="n">${brl(p.aport, 0)}</td><td class="n pos">${brl(p.renda)}</td></tr>`).join("")}</tbody></table>`;
+  // projeção 3D, barra fixa do celular e superfície
+  if (API.proj) API.proj.set(r, SANT, s.reinv);
+  g("barvivo").innerHTML = `<div><small>Patrimônio final</small><b>${brl(r.patFim, 0)}</b><span class="ant">${SR && Math.abs(r.patFim - SR.patFim) > .5 ? `<span class="${r.patFim > SR.patFim ? "up" : "dn"}">${r.patFim > SR.patFim ? "▲" : "▼"} ${brl(Math.abs(r.patFim - SR.patFim), 0)}</span>` : "&nbsp;"}</span></div><div><small>Renda/mês final</small><b>${brl(r.rendaFim)}</b><span class="ant">&nbsp;</span></div><div><small>Renda/mês hoje</small><b>${brl(r.rendaHoje)}</b><span class="ant">&nbsp;</span></div>`;
+  if (API.sup) { if (!primeira) API.sup.set(Object.assign({}, s)); if (API.sup.meta) API.sup.meta(M ? M.inv : null) }
+  SR = Object.assign({ serie: r.serie }, V); if (API.proj && API.proj.resumo) API.proj.resumo() }
+
+/* projeção mês a mês: HUD mostra o final (e a diferença para o cenário anterior) ou o mês sob o mouse/dedo */
+function simProj() { const g = id => document.getElementById(id), st = g("st-proj"), P = projecao3D(st); if (!P) return; API.proj = P;
+  const vV = g("pjV"), vL = g("pjL"), vD = g("pjD");
+  P.resumo = () => { if (!SR) return; const fim = SR.serie[SR.serie.length - 1]; vL.textContent = "Patrimônio projetado · ao final"; contar(vV, fim.pat, v => brl(v, 0), 500);
+    vD.innerHTML = SANT ? (() => { const d = fim.pat - SANT[SANT.length - 1].pat; return Math.abs(d) < .5 ? `<span class="cnt">igual ao cenário anterior</span>` : `<span class="${d > 0 ? "pos" : "neg"}">${d > 0 ? "▲" : "▼"} ${brl(Math.abs(d), 0)}</span> <span class="cnt">vs. cenário anterior (${brl(SANT[SANT.length - 1].pat, 0)})</span>` })() : `<span class="cnt">${brl(fim.aport, 0)} aportados · ${brl(fim.rendTot, 0)} em rendimentos</span>` };
+  P.aoHover(i => { if (i == null) return P.resumo(); const p = SR.serie[i]; vL.textContent = "Patrimônio em " + cap1(mes(mesesReais(SR.serie.length - 1)[i])); contar(vV, p.pat, v => brl(v, 0), 260);
+    vD.innerHTML = `<span class="cnt">${int(p.cotas)} cotas · renda de ${brl(p.renda)}/mês</span>` });
+  P.enq = () => P.persp((document.querySelector('[data-persp="proj"] button.on') || {}).dataset?.k || "perspectiva"); setTimeout(P.enq, 250);
+  const c0 = P.S.cheia; P.S.cheia = on => { if (c0) c0(on); setTimeout(P.enq, 420) } }
+addEventListener("resize", () => { clearTimeout(sTR); sTR = setTimeout(() => { if (API.proj && API.proj.enq) API.proj.enq() }, 300) });
+
+AFTER.simulador = () => { const s = S.sim, g = id => document.getElementById(id); SR = null; SANT = null; SMEX = "";
+  g("inA").oninput = () => { const v = numBR(g("inA").value); if (!(v >= 0)) return; if (s.modo === "cotas") s.qtd = Math.floor(v); else s.cap = v; SMEX = ""; simAtualizar() };
+  g("inP").oninput = () => { const v = numBR(g("inP").value); if (!(v > 0)) return; s.preco = v; SMEX = ""; simAtualizar() };
+  g("inInv").oninput = () => { const v = numBR(g("inInv").value); if (!(v >= 0)) return; simModo("cap"); s.cap = v; SMEX = ""; simAtualizar() };
+  g("inCot").oninput = () => { const v = numBR(g("inCot").value); if (!(v >= 0)) return; simModo("cotas"); s.qtd = Math.floor(v); SMEX = ""; simAtualizar() };
+  ["inA", "inP", "inInv", "inCot"].forEach(id => g(id).addEventListener("blur", () => setTimeout(simCampos, 0)));
+  SCTL.forEach(([k]) => { [g("r_" + k), SDOCK[k] && g(SDOCK[k])].forEach(el => { if (el) el.oninput = () => { s[k] = +el.value; simPoe(k); SMEX = k; simAtualizar() } }) });
+  g("r_reinv").onchange = () => { s.reinv = g("r_reinv").checked; SMEX = "reinv"; simAtualizar() };
+  document.querySelectorAll("#smodo button").forEach(b => b.onclick = () => { simModo(b.dataset.v); simAtualizar() });
+  document.querySelectorAll("#sobj button").forEach(b => b.onclick = () => { s.obj = b.dataset.v; document.querySelectorAll("#sobj button").forEach(x => x.classList.toggle("on", x === b)); g("pRenda").hidden = s.obj === "meta"; g("pMeta").hidden = s.obj !== "meta"; simAtualizar() });
+  const poeMeta = v => { s.meta = v; document.querySelectorAll("[data-meta]").forEach(x => x.classList.toggle("on", +x.dataset.meta === v)); simAtualizar() };
+  document.querySelectorAll("[data-meta]").forEach(b => b.onclick = () => { g("smeta").value = nf(+b.dataset.meta, 0); poeMeta(+b.dataset.meta) });
+  g("smeta").oninput = () => { const v = numBR(g("smeta").value); if (v > 0) poeMeta(v) };
   const inp = g("sfii"), acl = g("sacl"); inp.onfocus = () => inp.select();
   inp.oninput = () => { const q = inp.value.trim().toLowerCase(), l = F.filter(f => f.t.toLowerCase().startsWith(q) || f.nm.toLowerCase().includes(q)).slice(0, 8);
     acl.innerHTML = l.map(f => `<button data-tk="${f.t}"><span><b>${f.t}</b> <span class="cnt">${esc(f.nm)}</span></span><span class="cnt">${brl(f.preco)} · DY ${pct(f.dy12, 1)}</span></button>`).join(""); acl.hidden = !l.length;
-    acl.querySelectorAll("button").forEach(b => b.onmousedown = e => { e.preventDefault(); const k = { aporte: s.aporte, anos: s.anos, reinv: s.reinv, valor: s.valor }; S.sim = Object.assign(simDefault(b.dataset.tk), k); go("simulador", b.dataset.tk) }) };
+    acl.querySelectorAll("button").forEach(b => b.onmousedown = e => { e.preventDefault(); const k = { aporte: s.aporte, anos: s.anos, reinv: s.reinv, valor: s.valor, obj: s.obj, meta: s.meta }; S.sim = Object.assign(simDefault(b.dataset.tk), k); go("simulador", b.dataset.tk) }) };
   inp.onblur = () => setTimeout(() => acl.hidden = true, 150);
-  API.sup = superficie3D(g("st-sup"), s, { aoEscolher: (a, y) => { s.aporte = a; s.anos = y; [["sap", a, fA], ["dap", a, fA], ["sanos", y, fY], ["danos", y, fY]].forEach(([id, v, fmt]) => poe(id, v, fmt)); simRender(true); toast(`Cenário aplicado: ${brl(a, 0)}/mês por ${y} ${y === 1 ? "ano" : "anos"}`) } });
-  document.querySelectorAll("#sobj button").forEach(b => b.onclick = () => { s.obj = b.dataset.v; document.querySelectorAll("#sobj button").forEach(x => x.classList.toggle("on", x === b));
-    g("rRenda").hidden = s.obj === "meta"; g("rMeta").hidden = s.obj !== "meta"; simRender(false) });
-  const poeMeta = v => { s.meta = v; document.querySelectorAll("[data-meta]").forEach(x => x.classList.toggle("on", +x.dataset.meta === v)); simRender(false) };
-  document.querySelectorAll("[data-meta]").forEach(b => b.onclick = () => { const v = +b.dataset.meta; g("smeta").value = nf(v, 0); poeMeta(v) });
-  g("smeta").oninput = () => { const v = n(g("smeta").value); if (v > 0) poeMeta(v) };
   g("dkTg").onclick = () => { const d = g("supDock"), m = d.classList.toggle("min"); g("dkTg").textContent = m ? "▴" : "▾" };
-  ligarCtrls("sup"); simRender(false) };
+  simProj(); simCampos();
+  API.sup = superficie3D(g("st-sup"), Object.assign({}, s), { aoEscolher: (a, y) => { s.aporte = a; s.anos = y; simPoe("aporte"); simPoe("anos"); SMEX = "aporte"; simAtualizar(); toast(`Cenário aplicado: ${brl(a, 0)}/mês por ${y} ${y === 1 ? "ano" : "anos"}`) } });
+  ligarCtrls("sup"); ligarCtrls("proj"); simAtualizar(true) };
 
 /* ============ Minha carteira ============ */
 VIEWS.carteira = () => { const c = carteira(), pat = c.reduce((s, p) => s + (p.atual || 0), 0), inv = c.reduce((s, p) => s + (p.invest || 0), 0), rm = c.reduce((s, p) => s + (p.rendMes || 0), 0), prov = c.reduce((s, p) => s + (p.prov || 0), 0);

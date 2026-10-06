@@ -75,13 +75,31 @@ function indiceMercado(n) { const top = F.filter(f => (f.precos || []).length >=
     return { m: mm, pat: v, rend } }) }
 
 /* ---------- simulação ---------- */
-function projetar(s) { const meses = Math.round(s.anos * 12), taxaM = s.dy / 100 / 12, valM = Math.pow(1 + (s.valor || 0) / 100, 1 / 12) - 1;
-  let cotas = s.modo === "cotas" ? s.qtd : Math.floor(s.cap / s.preco), preco = s.preco, caixa = 0, aportado = cotas * preco, rendAc = 0;
-  const ini = { cotas, inv: cotas * preco }, serie = [[0, cotas * preco, aportado, 0]], anual = [];
-  for (let m = 1; m <= meses; m++) { const rend = cotas * preco * taxaM; rendAc += rend; preco *= 1 + valM; caixa += s.aporte + (s.reinv ? rend : 0);
-    const nov = Math.floor(caixa / preco); cotas += nov; caixa -= nov * preco; aportado += s.aporte;
-    serie.push([m, cotas * preco + caixa, aportado, rendAc]); if (m % 12 === 0) anual.push({ ano: m / 12, cotas, pat: cotas * preco + caixa, aportado, rendAc, rendMes: cotas * preco * taxaM }) }
-  return { ini, serie, anual, fim: serie[serie.length - 1], rendMesFim: cotas * preco * taxaM } }
+/* motor único do simulador — mês a mês:
+   renda = cotas × preço × DY ÷ 12 · preço do mês seguinte = preço × (1 + valorização)^(1/12)
+   aporte vai para o caixa de aportes; renda vai para o caixa de rendimentos (se reinvestir) ou é recebida;
+   cada caixa compra cotas inteiras ao preço do mês e a sobra fica para o mês seguinte */
+function simular(x, mesesMax) {
+  const meses = mesesMax || Math.round(x.anos * 12), taxa = x.dy / 1200, cresce = Math.pow(1 + x.valor / 100, 1 / 12);
+  const cotIni = x.modo === "cotas" ? Math.max(0, Math.floor(x.qtd)) : Math.max(0, Math.floor(x.cap / x.preco));
+  let preco = x.preco, cA = 0, cR = 0, cxA = 0, cxR = 0, aport = cotIni * x.preco, rendTot = 0, recebido = 0;
+  const capIni = cotIni * x.preco, serie = [{ m: 0, pat: capIni, aport, rendTot: 0, cotas: cotIni, preco, renda: cotIni * preco * taxa }];
+  for (let m = 1; m <= meses; m++) {
+    const cot = cotIni + cA + cR, renda = cot * preco * taxa; rendTot += renda;
+    preco *= cresce; cxA += x.aporte; aport += x.aporte;
+    if (x.reinv) cxR += renda; else recebido += renda;
+    const nA = Math.floor(cxA / preco), nR = Math.floor(cxR / preco); cA += nA; cR += nR; cxA -= nA * preco; cxR -= nR * preco;
+    const c2 = cotIni + cA + cR; serie.push({ m, pat: c2 * preco + cxA + cxR, aport, rendTot, cotas: c2, preco, renda: c2 * preco * taxa, recebido });
+  }
+  const f = serie[serie.length - 1], rendReinv = x.reinv ? rendTot : 0;
+  return { cotIni, capIni, rendaHoje: cotIni * x.preco * taxa, serie, fim: f, cotasA: cA, cotasR: cR, patFim: f.pat, rendaFim: f.renda, aportado: f.aport, rendTot, recebido,
+    valoriz: Math.abs(f.pat - f.aport - rendReinv) < .5 ? 0 : f.pat - f.aport - rendReinv, rendReinv };
+}
+/* a Superfície 3D chama projetar(): passa a usar o mesmo motor */
+function projetar(x) { const r = simular(x); return { ini: { cotas: r.cotIni, inv: r.capIni }, serie: r.serie.map(p => [p.m, p.pat, p.aport, p.rendTot]),
+  anual: r.serie.filter(p => p.m && p.m % 12 === 0).map(p => ({ ano: p.m / 12, cotas: p.cotas, pat: p.pat, aportado: p.aport, rendAc: p.rendTot, rendMes: p.renda })), fim: [r.fim.m, r.patFim, r.aportado, r.rendTot], rendMesFim: r.rendaFim } };
+/* meses reais da projeção, a partir do mês que vem (AAAA-MM) */
+const mesesReais = n => { const d = new Date(); d.setDate(1); const out = []; for (let i = 0; i <= n; i++) { const x = new Date(d.getFullYear(), d.getMonth() + 1 + i, 1); out.push(x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0")) } return out };
 
 const RANKS = [
   ["dy", "Maior Dividend Yield", "Rendimentos pagos nos últimos 12 meses ÷ cotação atual. DY alto pode refletir queda da cota ou rendimento não recorrente.", f => f.dy12, f => pct(f.dy12), true],

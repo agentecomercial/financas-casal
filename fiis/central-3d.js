@@ -228,3 +228,61 @@ function anel3D(el, partes) {
   S.onHover = (ob, e) => { const p = ob.userData.p; tipOn(e.clientX, e.clientY, tipLinhas(esc(p.k), [["Valor atual", brl(p.v, 0)], ["Peso", pct(p.v / tot * 100, 1)], ["Renda/mês est.", `<span class="pos">${brl(p.renda)}</span>`]])) };
   S.onClick = (ob, e) => S.onHover(ob, e);
   return { S } }
+
+/* ---------- Projeção mês a mês (Simulador) ----------
+   volume champanhe = patrimônio · faixa verde = rendimentos reinvestidos · área/linha azul = total aportado
+   · linha clara tracejada = cenário anterior. Só apresentação: os números vêm de simular(). */
+function projecao3D(el) {
+  const S = palco(el, { cam: [5.5, 5.2, 19.5], alvo: [0, 2.6, 0], minD: 10, maxD: 38, maxP: 1.45 }); if (!S) return null; piso(S);
+  const W = 19, H = 5.6, grupo = { g: null }, feixe = new THREE.Mesh(new THREE.CylinderGeometry(.018, .018, 1, 8), new THREE.MeshBasicMaterial({ color: 0xf2e3bd, transparent: true, opacity: .6 }));
+  const pPat = new THREE.Mesh(new THREE.SphereGeometry(.16, 20, 14), new THREE.MeshStandardMaterial({ color: 0xf2e3bd, emissive: 0xd6be8a, emissiveIntensity: 1.1 }));
+  const pApo = new THREE.Mesh(new THREE.SphereGeometry(.1, 16, 12), new THREE.MeshBasicMaterial({ color: 0x7fa7d9 }));
+  [feixe, pPat, pApo].forEach(o => { o.visible = false; S.scene.add(o) });
+  let atual = null, dados = null, ultimo = null, aoHover = null;
+  const desenhar = (v, mx) => { if (grupo.g) S.limpar(grupo.g); const g = new THREE.Group(), n = v.pat.length - 1, X = i => -W / 2 + i * W / n, Y = x => .02 + x / mx * H;
+    const pts = v.pat.map((x, i) => new THREE.Vector3(X(i), Y(x), 0)), passoA = Math.max(1, Math.round(n / 160)), am = pts.filter((_, i) => i % passoA === 0 || i === n);
+    const sh = new THREE.Shape(); sh.moveTo(am[0].x, 0); am.forEach(q => sh.lineTo(q.x, q.y)); sh.lineTo(am[am.length - 1].x, 0); sh.closePath();
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: 1.1, bevelEnabled: false }); geo.translate(0, 0, -.55); gradienteY(geo, "#0b0d10", "#7a6238", H + .2);
+    g.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: .42, side: THREE.FrontSide, depthWrite: false })));
+    const cv = new THREE.CatmullRomCurve3(am, false, "centripetal", .2);
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(cv, am.length * 3, .05, 8), new THREE.MeshBasicMaterial({ color: 0xf6e8c4 })));
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(cv, am.length * 3, .17, 8), new THREE.MeshBasicMaterial({ color: 0xd6be8a, transparent: true, opacity: .14, blending: THREE.AdditiveBlending, depthWrite: false })));
+    // faixa dos rendimentos reinvestidos (entre aportado e aportado + rendimentos), na face da frente
+    const fr = .56, ia = v.apo.map((x, i) => [X(i), Y(Math.min(x, v.pat[i]))]).filter((_, i) => i % passoA === 0 || i === n), ib = v.ar.map((x, i) => [X(i), Y(Math.min(x, v.pat[i]))]).filter((_, i) => i % passoA === 0 || i === n);
+    if (v.ar.some((x, i) => x - v.apo[i] > mx * .002)) { const bs = new THREE.Shape(); bs.moveTo(ia[0][0], ia[0][1]); ib.forEach(q => bs.lineTo(q[0], q[1])); for (let k = ia.length - 1; k >= 0; k--) bs.lineTo(ia[k][0], ia[k][1]); bs.closePath();
+      const bm = new THREE.Mesh(new THREE.ShapeGeometry(bs), new THREE.MeshBasicMaterial({ color: 0x2f9c84, transparent: true, opacity: .34, side: THREE.DoubleSide, depthWrite: false })); bm.position.z = fr; g.add(bm);
+      g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ib.map(q => new THREE.Vector3(q[0], q[1], fr + .01))), new THREE.LineBasicMaterial({ color: 0x6fe0c4, transparent: true, opacity: .9 }))) }
+    { const as = new THREE.Shape(); as.moveTo(ia[0][0], 0); ia.forEach(q => as.lineTo(q[0], q[1])); as.lineTo(ia[ia.length - 1][0], 0); as.closePath();
+      const amh = new THREE.Mesh(new THREE.ShapeGeometry(as), new THREE.MeshBasicMaterial({ color: 0x3b5578, transparent: true, opacity: .28, side: THREE.DoubleSide, depthWrite: false })); amh.position.z = fr - .005; g.add(amh) }
+    const la = new THREE.Line(new THREE.BufferGeometry().setFromPoints(ia.map(q => new THREE.Vector3(q[0], q[1], fr + .02))), new THREE.LineDashedMaterial({ color: 0x7fa7d9, dashSize: .22, gapSize: .14, transparent: true, opacity: .95 })); la.computeLineDistances(); g.add(la);
+    // cenário anterior: linha clara, fina, logo atrás
+    if (v.fant) { const fp = v.fant.map((x, i) => new THREE.Vector3(-W / 2 + i * W / (v.fant.length - 1), Y(x), fr + .04)).filter((_, i) => i % passoA === 0 || i === v.fant.length - 1);
+      g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(fp), new THREE.LineDashedMaterial({ color: 0xffffff, dashSize: .12, gapSize: .1, transparent: true, opacity: .55 })).computeLineDistances()) }
+    // eixo: meses reais, espaçamento automático
+    const passo = [1, 2, 3, 6, 12, 24, 36, 60].find(p => n / p <= 9) || 60;
+    v.ms.forEach((m, i) => { if (i % passo && i !== n) return; if (i !== n && n - i < passo * .6) return; const l = rotulo(mes(m).replace(/^./, c => c.toUpperCase()), { alt: .42, cor: "#8f959d" }); l.position.set(X(i), -.05, 1.6); g.add(l) });
+    [.33, .66, 1].forEach(t => { const yy = .02 + t * H; g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-W / 2 - .3, yy, -.57), new THREE.Vector3(W / 2 + .3, yy, -.57)]), new THREE.LineBasicMaterial({ color: 0x2a2f36, transparent: true, opacity: .8 })));
+      const l = rotulo(big(mx * t), { esq: true, cor: "#6c737c", alt: .34 }); l.position.set(W / 2 + .45, yy, -.57); g.add(l) });
+    // alvo invisível para o mouse/dedo escolher o mês
+    const alvo = new THREE.Mesh(new THREE.PlaneGeometry(W + .6, H + 1.4), new THREE.MeshBasicMaterial({ visible: false })); alvo.position.set(0, H / 2 + .2, .6); g.add(alvo); S.hov = [alvo];
+    S.scene.add(g); grupo.g = g; return { X, Y, n } };
+  let geom = null, mxAtual = 1;
+  const mostrar = i => { if (!dados || i == null) { [feixe, pPat, pApo].forEach(o => o.visible = false); aoHover && aoHover(null); return } const x = geom.X(i), yP = geom.Y(dados.pat[i]);
+    feixe.visible = pPat.visible = pApo.visible = true; feixe.scale.y = yP; feixe.position.set(x, yP / 2, .58); pPat.position.set(x, yP, 0); pApo.position.set(x, geom.Y(Math.min(dados.apo[i], dados.pat[i])), .58); aoHover && aoHover(i) };
+  S.onHover = (ob, e, hit) => { if (!dados) return; const i = Math.max(0, Math.min(geom.n, Math.round((hit.point.x + W / 2) / W * geom.n))), r = dados.r.serie[i], ant = dados.r0 && dados.r0[i];
+    mostrar(i); const reinv = dados.reinv, rendR = reinv ? r.rendTot : 0, val = r.pat - r.aport - rendR;
+    tipOn(e.clientX, e.clientY, tipLinhas(mes(dados.ms[i]).replace(/^./, c => c.toUpperCase()), [["Patrimônio", `<span style="color:var(--champ2)">${brl(r.pat, 0)}</span>`], ["Total aportado", brl(r.aport, 0)], ["Rendimentos acumulados", `<span class="pos">${brl(r.rendTot, 0)}</span>${reinv ? "" : " <span style='color:var(--mute)'>(recebidos)</span>"}`],
+      ["Valorização", `${val >= 0 ? "" : "−"}${brl(Math.abs(Math.abs(val) < .5 ? 0 : val), 0)}`], ["Cotas", int(r.cotas)], ["Renda mensal estimada", `<span class="pos">${brl(r.renda)}</span>`]].concat(ant ? [["Cenário anterior", `<span style="color:var(--mute)">${brl(ant.pat, 0)}</span>`]] : []))) };
+  S.onLeave = () => { mostrar(null); tipOff() }; S.onClick = (ob, e, hit) => S.onHover(ob, e, hit);
+  return { S, aoHover: f => aoHover = f,
+    set(r, ant, reinv) { const ms = mesesReais(r.serie.length - 1), novo = { pat: r.serie.map(p => p.pat), apo: r.serie.map(p => p.aport), ar: r.serie.map(p => p.aport + (reinv ? p.rendTot : 0)) };
+      const fant = ant ? ant.map(p => p.pat) : null, mx = Math.max(...novo.pat, ...(fant || [0])) * 1.08 || 1;
+      dados = { pat: novo.pat, apo: novo.apo, ms, r, r0: ant, reinv };
+      // transição: a curva se transforma do cenário anterior para o novo (mesmo nº de meses), senão cresce do chão
+      const de = ultimo && ultimo.pat.length === novo.pat.length ? ultimo : { pat: novo.pat.map(() => 0), apo: novo.apo.map(() => 0), ar: novo.ar.map(() => 0) }, mx0 = ultimo ? mxAtual : mx;
+      ultimo = novo; S.tw.length = 0;
+      S.tween(RM ? 1 : 560, e => { const mix = (a, b) => a.map((x, i) => x + (b[i] - x) * e); geom = desenhar({ pat: mix(de.pat, novo.pat), apo: mix(de.apo, novo.apo), ar: mix(de.ar, novo.ar), fant, ms }, mx0 + (mx - mx0) * e) }, () => { mxAtual = mx }) },
+    persp: k => { const P = { perspectiva: [[5.5, 5.2, 19.5], [.6, 2.6, 0]], frente: [[.6, 3.4, 20], [.6, 2.8, 0]], lado: [[22, 5, 5], [0, 2.6, 0]], topo: [[.6, 25, 3], [.6, 0, 0]] }[k]; if (!P) return;
+      // tela mais "alta" que o card (tela cheia, notebook): afasta a câmera para os rótulos de valor não saírem do quadro
+      const asp = el.clientWidth / Math.max(1, el.clientHeight), f = Math.max(1, Math.pow(2.4 / asp, .66) / (asp < 1.2 ? Math.min(2.6, Math.pow(1.2 / asp, .85)) : 1)), A = P[1];
+      S.voar(P[0].map((c, j) => A[j] + (c - A[j]) * f), A) } } }
