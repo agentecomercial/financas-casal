@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Finanças do Casal</title>
 <meta name="robots" content="noindex,nofollow">
-<meta name="fc-versao" content="6167cb2b">
+<meta name="fc-versao" content="c97d32dc">
 <meta name="theme-color" content="#15103A">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -861,8 +861,8 @@ function drawSubDet(){const {cat,sub}=F,d=monthData(S.sel),subOk=x=>(SUBC[cat]&&
   const l=d.lista.filter(x=>x.it.cat===cat&&subOk(x)).sort((a,b)=>b.v-a.v),tot=l.reduce((s,x)=>s+x.v,0),nome=(SUBC[cat]||{})[sub]||"Outros";
   const grupos=[["🏠 Despesas fixas",x=>ehFixa(x.it)],...cardIds().map(f=>["💳 "+S.cfg.cartoes[f].nome,x=>x.it.forma===f]),["Compras à vista",x=>!compromete(x.it)&&!ehFixa(x.it)]];
   const linha=({it,k,v})=>{const tipo=it.tipo==="fixo"?PERN[it.per||1]+" fixo":it.tipo==="avulso"?"Única":`Parcela ${k}/${it.parcelas}`,pg=ehFixa(it)?S.pagFix[pagFixId(S.sel,it.id)]:null;
-    return `<button class="item" data-subit="${it.id}"><span class="dot" style="background:var(--${cat});color:var(--${cat})"></span><span class="t"><span class="d">${esc(it.desc)}</span>
-      <span class="meta">${tipo} · ${esc(it.quem||"")}${ehFixa(it)?` · ${pg?"pago":"pendente"}`:""}${tot?` · ${Math.round(v/tot*100)}%`:""}</span></span><span class="val">${brl(v)}</span></button>`};
+    return `<button class="item" data-subit="${it.id}"><span class="dot" style="background:var(--${cat});color:var(--${cat})"></span><span class="t"><span class="d">${esc(it.desc)}${fixaUltTag(it,S.sel)}</span>
+      <span class="meta">${tipo}${fixaPer(it)?" · "+fixaPer(it):""} · ${esc(it.quem||"")}${ehFixa(it)?` · ${pg?"pago":"pendente"}`:""}${tot?` · ${Math.round(v/tot*100)}%`:""}</span></span><span class="val">${brl(v)}</span></button>`};
   const corpo=grupos.map(([g,fn])=>{const gl=l.filter(fn);if(!gl.length)return "";return `<div class="group"><h3><span>${g}</span><span>${brl(gl.reduce((s,x)=>s+x.v,0))}</span></h3>${gl.map(linha).join("")}</div>`}).join("");
   sheetIn.innerHTML=`<div class="grab"></div><h2>${esc(CATS[cat].nome)} › ${esc(nome)}</h2>
     <div class="sd-tot"><span class="muted small">${mLong(S.sel)} · ${l.length} ${l.length===1?"lançamento":"lançamentos"}</span><b>${brl(tot)}</b></div>
@@ -1253,7 +1253,7 @@ function linhaTempo(){const ev=[];const movs=Object.values(S.movs).filter(m=>S.a
     if(!res&&metaRes&&c.reserva>=metaRes){res=true;ev.push({d,mes:true,k:"marco",t:"Reserva de emergência completa"})}
     for(const mt of Object.values(S.metas)){if(metaOk.has(mt.id))continue;let s=0;for(const x of c.list)if(x.a.metaId===mt.id)s+=x.saldo;if(mt.valor&&s>=mt.valor){metaOk.add(mt.id);ev.push({d,mes:true,k:"marco",t:`Meta atingida: ${mt.nome}`})}}}
   return ev.sort((a,b)=>a.d<b.d?1:a.d>b.d?-1:(a.k==="marco")-(b.k==="marco"))}
-const TLK={marco:"Marcos",compra:"Compras",venda:"Vendas",provento:"Proventos",saldo:"Atualizações"};
+const TLK={marco:"Conquistas",compra:"Compras",venda:"Vendas",provento:"Proventos",saldo:"Atualizações"};
 function tlRow(e){const dd=e.mes?e.d.slice(5,7)+"/"+e.d.slice(0,4):e.d.split("-").reverse().join("/");
   return `<div class="tl k-${e.k}"><i></i><span class="muted small">${dd}</span><span class="tlr"><b>${esc(e.t)}</b>${e.v!==undefined?`<span class="${e.v<0?"neg":e.k==="provento"?"pos":""}">${e.v<0?"−":e.k==="provento"?"+":""}${brl(Math.abs(e.v))}</span>`:""}</span></div>`}
 function openHistorico(){F={mode:"hist",f:"todos"};drawHist();openSheet()}
@@ -1306,10 +1306,10 @@ function patrimonio(){
   const head=`<div class="top"><h1>Patrimônio</h1><button class="mini gold" data-act="report">Relatório do mês</button></div><p class="sync" data-syncnow>${syncTxt()}</p>
   <p class="cotline">${ct?ct+" ":""}${S.cotWait?`<span class="cotwait"><i></i>Cole <b>atualizar ativos</b> no chat do Claude. A cotação entra sozinha.</span> <button class="mini" data-act="cotCancel">cancelar</button>`:`<button class="mini gold" data-act="cotNow" title="${ONLINE?"Relê as cotações publicadas":"Copia o comando para colar no chat do Claude"}">Atualizar</button>`}
   ${tickersForaDoArquivo().length?`<span class="neg">${tickersForaDoArquivo().join(", ")} fora da lista: adicione em tickers.txt</span>`:""}</p>
-  <div class="hero${sub==="resumo"?"":" solo"}">${sub==="resumo"?`<div class="vault-wrap"><div class="vault">${[...Array(7)].map((_,i)=>`<i style="--i:${i}"></i>`).join("")}</div></div>`:""}
+  <div class="hero"><div class="vault-wrap"><div class="vault">${[...Array(7)].map((_,i)=>`<i style="--i:${i}"></i>`).join("")}</div></div>
   <div class="headline"><p class="lbl">Investido hoje</p><p class="big" data-v="${c.saldo}">${brl(c.saldo)}</p>
-    ${sub==="resumo"?(()=>{const pm=periodo(perRange({t:"max"})[0],todayStr());return `<div class="stats"><div><span>Rendimento total</span><b class="${pm.rend>=0?"pos":"neg"}">${pm.rend>=0?"+":"−"}${brl(Math.abs(pm.rend))}</b><small>${pm.ent?pctf(pm.rend/pm.ent*100)+" sobre as entradas":""}</small></div><div><span>Proventos recebidos</span><b class="pos">${brl(c.prov)}</b></div></div>
-    <div class="stats"><div><span>Custo para o IR</span><b>${brl(c.aplicado)}</b></div><div><span>Líquido de IR estimado</span><b>${brl(c.liq)}</b></div></div>`})():""}</div></div>
+    ${(()=>{const pm=periodo(perRange({t:"max"})[0],todayStr());return `<div class="stats"><div><span>Rendimento total</span><b class="${pm.rend>=0?"pos":"neg"}">${pm.rend>=0?"+":"−"}${brl(Math.abs(pm.rend))}</b><small>${pm.ent?pctf(pm.rend/pm.ent*100)+" sobre as entradas":""}</small></div><div><span>Proventos recebidos</span><b class="pos">${brl(c.prov)}</b></div></div>
+    <div class="stats"><div><span>Custo para o IR</span><b>${brl(c.aplicado)}</b></div><div><span>Líquido de IR estimado</span><b>${brl(c.liq)}</b></div></div>`})()}</div></div>
   <div class="chips ptabs">${tabs}</div>
   ${(()=>{const n=Object.values(S.ativos).filter(a=>a.tipo==="fii").length;return `<a class="fii-entry" href="fiis/index.html"><span class="fe-mono">F</span><span class="fe-t"><b>Central de FIIs</b><small>Mapa 3D do mercado, rankings, simulador e sua carteira de fundos imobiliários${n?` · ${n} ${n===1?"FII":"FIIs"} no seu Patrimônio`:""}</small></span><span class="fe-go">Entrar →</span></a>`})()}`;
   return head+`<div class="dgrid">`+(sub==="resumo"?pResumo(c):sub==="ativos"?pAtivos(c):sub==="renda"?pRenda(c):pPlanos(c))+`</div>`;
@@ -1349,7 +1349,7 @@ function pResumo(c){const hoje=todayStr(),cur=mkey(new Date()),cfg=S.cfg;
     <div class="pay big"><span>Patrimônio líquido</span><b class="${pl>=0?"pos":"neg"}">${pl<0?"−":""}${brl(Math.abs(pl))}</b></div>
     <button class="btn ghost" data-act="newBem">Adicionar bem ou dívida</button></section>
   <section class="panel glass"><h2>Evolução</h2><p class="desc">Toque num mês para ver o resumo dele.</p>${periodoHTML()}</section>
-  <section class="panel glass tlcard" data-act="hist" role="button" tabindex="0"><h2>Linha do tempo</h2><p class="desc">Marcos e movimentos recentes. Toque para ver todo o histórico.</p>${tl||'<p class="muted small" style="margin:0">Os marcos aparecem conforme o patrimônio cresce.</p>'}
+  <section class="panel glass tlcard" data-act="hist" role="button" tabindex="0"><h2>Linha do tempo</h2><p class="desc">Conquistas e movimentos recentes. Toque para ver todo o histórico.</p>${tl||'<p class="muted small" style="margin:0">As conquistas aparecem conforme o patrimônio cresce.</p>'}
     ${tlAll.length>6?`<p class="small" style="margin:10px 0 0;color:var(--gold);font-weight:700">Ver todos os ${tlAll.length} registros ›</p>`:""}</section>`}
 /* ---------- investido por mês: aportes e compras (menos resgates e vendas) de cada mês ---------- */
 function investidoMes(m){const r={m,ap:0,rs:0,movs:[]};
@@ -2396,8 +2396,8 @@ function lancamentos(){
     html+=`<div class="group"><h3><span>${formaNome(fo)}</span><span>${brl(tot)}</span></h3>`+l.map(({it,k,v})=>{
       const tipo=it.tipo==="fixo"?PERN[it.per||1]+" fixo":it.tipo==="avulso"?"Única":`Parcela ${k}/${it.parcelas}`;
       return `<button class="item" data-edit="${it.id}"><span class="dot" style="background:var(--${it.cat});color:var(--${it.cat})"></span>
-      <span class="t"><span class="d">${esc(it.desc)}${it.tipo==="parcelado"&&k===it.parcelas?'<span class="tag-end">última</span>':""}${it.foto?'<span class="tag-end foto">foto</span>':""}</span>
-      <span class="meta">${tipo}, ${CATS[it.cat].nome.toLowerCase()}${it.sub&&subNome(it.cat,it.sub)?" ("+subNome(it.cat,it.sub).toLowerCase()+")":""}, ${esc(it.quem||"")}${it.usd?`, ${usdf(it.usd)} × ${rate(S.cfg.dolar)}${it.iof?" + IOF":""}`:""}</span></span>
+      <span class="t"><span class="d">${esc(it.desc)}${it.tipo==="parcelado"&&k===it.parcelas?'<span class="tag-end">última</span>':""}${fixaUltTag(it,S.sel)}${it.foto?'<span class="tag-end foto">foto</span>':""}</span>
+      <span class="meta">${tipo}${fixaPer(it)?" ("+fixaPer(it)+")":""}, ${CATS[it.cat].nome.toLowerCase()}${it.sub&&subNome(it.cat,it.sub)?" ("+subNome(it.cat,it.sub).toLowerCase()+")":""}, ${esc(it.quem||"")}${it.usd?`, ${usdf(it.usd)} × ${rate(S.cfg.dolar)}${it.iof?" + IOF":""}`:""}</span></span>
       <span class="val">${brl(v)}</span></button>`}).join("")+`</div>`;
   }
   if(!html)html=`<div class="empty">${q||f.length||S.fcat.length||S.fquem.length?"Nada encontrado com esses filtros.":`Nada lançado em ${mLong(S.sel)}.<br>Toque no botão dourado para adicionar uma compra.`}</div>`;
@@ -2425,6 +2425,10 @@ const meioNome=it=>compromete(it)?formaNome(it.forma):(MEIOS[it.meio]||"Boleto, 
 const pagFixId=(m,id)=>m+"_"+id;
 const quando=iso=>{const d=new Date(iso);return d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})+" às "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})};
 function fixaCadeia(it){const r=[it];let a=it;for(let i=0;i<60&&a.origem&&S.items[a.origem];i++){a=S.items[a.origem];r.push(a)}return r}
+/* fixa que tem fim: "2 de 5" no mês m (início = 1º mês da cadeia de reajustes; trimestral/semestral/anual contam cobranças) */
+function fixaPer(it,m){if(!it||it.tipo!=="fixo"||!it.mesFim)return "";m=m||S.sel||mkey(new Date());const c=fixaCadeia(it),ini=c[c.length-1].mes||it.mes,per=it.per||1;
+  const tot=Math.floor(diffM(ini,it.mesFim)/per)+1;if(m<ini)return `Começa em ${mShort(ini)} · ${tot} no total`;const k=Math.min(tot,Math.floor(diffM(ini,m)/per)+1);return `${k} de ${tot}`}
+const fixaUltTag=(it,m)=>it&&it.tipo==="fixo"&&it.mesFim&&it.mesFim===m?'<span class="tag-end">último mês</span>':"";
 function fixasLista(){const fx=Object.values(S.items).filter(i=>i.tipo==="fixo"),ant=new Set(fx.map(i=>i.origem).filter(Boolean));return fx.filter(i=>!ant.has(i.id)&&ehFixa(i))}
 function fixasMes(m){return monthData(m).lista.filter(x=>ehFixa(x.it)).map(x=>({it:x.it,v:x.v,pg:S.pagFix[pagFixId(m,x.it.id)]||null}))}
 /* situação do mês: despesas fixas × cartões × total (só aqui os dois se somam) */
@@ -2456,11 +2460,11 @@ function fixasHTML(){
   const conta=({it,v,pg})=>{const venc=it.dia?S.sel+"-"+String(Math.min(28,it.dia)).padStart(2,"0"):null,late=!pg&&venc&&venc<hoje;
     const st=pg?`<span class="st ok">Pago em ${quando(pg.pagoEm)}</span>`:late?`<span class="st late">Vencida dia ${it.dia}</span>`:`<span class="st pend">Pendente${it.dia?` · vence dia ${it.dia}`:""}</span>`;
     return `<div class="fx-pay${pg?" ok":""}"><button class="fx-ck${pg?" on":""}" data-fxpay="${it.id}" role="checkbox" aria-checked="${!!pg}" aria-label="${pg?"Desmarcar":"Marcar"} pagamento de ${esc(it.desc)}"></button>
-      <button class="fx-info" data-fixa="${it.id}"><span class="d">${esc(it.desc)}</span><span class="meta">${meioNome(it)} · ${CATS[it.cat].nome.toLowerCase()}</span>${st}</button><b class="fx-v">${brl(v)}</b></div>`};
+      <button class="fx-info" data-fixa="${it.id}"><span class="d">${esc(it.desc)}${fixaUltTag(it,S.sel)}</span><span class="meta">${meioNome(it)} · ${CATS[it.cat].nome.toLowerCase()}${fixaPer(it)?" · "+fixaPer(it):""}</span>${st}</button><b class="fx-v">${brl(v)}</b></div>`};
   const lista=mes.length?mes.map(conta).join(""):`<p class="muted small" style="margin:12px 0">Nenhuma despesa fixa cobrada em ${mLong(S.sel)}.</p>`;
   /* cadastro */
   const row=it=>{const per=it.per||1,on=fixaAtiva(it),prev=it.origem&&S.items[it.origem];
-    const nota=!on?`inativa desde ${mShort(addM(it.mesFim,1))}`:[prev?(val(prev)!==val(it)?`${it.mes>cur?"reajuste a partir de":"reajustada em"} ${mShort(it.mes)}, antes ${brl(val(prev))}`:`reativada em ${mShort(it.mes)}`):it.mes>cur?`começa em ${mShort(it.mes)}`:"",it.mesFim?`até ${mShort(it.mesFim)}`:""].filter(Boolean).join(" · ");
+    const nota=!on?`inativa desde ${mShort(addM(it.mesFim,1))}`:[prev?(val(prev)!==val(it)?`${it.mes>cur?"reajuste a partir de":"reajustada em"} ${mShort(it.mes)}, antes ${brl(val(prev))}`:`reativada em ${mShort(it.mes)}`):it.mes>cur&&!it.mesFim?`começa em ${mShort(it.mes)}`:"",fixaPer(it)].filter(Boolean).join(" · ");
     return `<button class="item${on?"":" fx-off"}" data-fixa="${it.id}"><span class="dot" style="background:var(--${it.cat});color:var(--${it.cat})"></span>
       <span class="t"><span class="d">${esc(it.desc)}${on?"":'<span class="tag-end off">inativa</span>'}</span><span class="meta">${metaDe(it)}${it.dia?" · vence dia "+it.dia:""}</span>${nota?`<span class="meta fx-nota">${nota}</span>`:""}</span>
       <span class="val">${brl(val(it))}${per>1?`<small>${brl(fixaMensal(it))}/mês</small>`:""}</span></button>`};
