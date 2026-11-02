@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Finanças do Casal</title>
 <meta name="robots" content="noindex,nofollow">
-<meta name="fc-versao" content="c97d32dc">
+<meta name="fc-versao" content="0a4a66fe">
 <meta name="theme-color" content="#15103A">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -309,6 +309,7 @@ body.travado main{margin-left:auto!important;margin-right:auto!important;max-wid
 .subrow[data-subdet]{cursor:pointer;border-radius:8px;margin-left:-6px;margin-right:-6px;padding:3px 6px;transition:background .15s}
 .subrow[data-subdet]:hover,.subrow[data-subdet]:focus-visible{background:var(--glass2);color:var(--ink);outline:none}
 .subrow[data-subdet] span:first-child::after{content:" ›";opacity:.5}
+.sd-mes{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px}.sd-mes b{font-family:"Fraunces",Georgia,serif;font-weight:600;font-size:1.15rem;text-transform:capitalize}.sd-mes .nav{width:36px;height:36px;font-size:1.1rem}
 .sd-tot{display:flex;justify-content:space-between;align-items:baseline;margin:2px 0 6px}.sd-tot b{font-size:1.35rem}
 .ptabs{margin-top:4px}
 .big2{font-family:"Fraunces",Georgia,serif;font-size:2rem;font-weight:600;margin:0 0 4px;color:var(--gold)}
@@ -887,6 +888,7 @@ function drawSitDet(){const f=F.sdf,m=S.sel,d=monthData(m),hoje=todayStr(),venc=
   const tot=sec.reduce((s,[,l])=>s+l.reduce((a,x)=>a+x.v,0),0),n=sec.reduce((s,[,l])=>s+l.length,0);
   const tit={total:"Total de despesas",pago:"Pago",pend:"Pendente"}[f];
   sheetIn.innerHTML=`<div class="grab"></div><h2>Visão geral › ${tit}</h2>
+    <div class="sd-mes"><button class="nav" data-sdmes="-1" aria-label="Mês anterior">‹</button><b>${mLong(m)}</b><button class="nav" data-sdmes="1" aria-label="Próximo mês">›</button></div>
     ${seg("sdf",[["total","Total"],["pago","Pago"],["pend","Pendente"]],f)}
     <div class="sd-tot" style="margin-top:12px"><span class="muted small">${mLong(m)} · ${n} ${n===1?"item":"itens"}</span><b class="${f==="pago"?"pos":f==="pend"&&tot?"neg":""}">${brl(tot)}</b></div>
     ${sec.map(([g,l])=>`<div class="group"><h3><span>${g}</span><span>${brl(l.reduce((a,x)=>a+x.v,0))}</span></h3>${l.map(x=>`<button class="item" ${x.attr}><span class="t"><span class="d">${esc(x.t)}</span><span class="meta">${x.meta}</span></span><span class="val">${brl(x.v)}</span></button>`).join("")}</div>`).join("")||`<p class="muted">${f==="pend"?"Nada pendente neste mês. 🎉":"Nada neste mês."}</p>`}
@@ -2065,6 +2067,7 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Escape"&&S.ddOpen){ddSet(null);return}
   if((e.key==="Enter"||e.key===" ")&&e.target.closest&&e.target.closest("[data-evm]")){e.preventDefault();e.target.closest("[data-evm]").dispatchEvent(new MouseEvent("click",{bubbles:true}));return}
   if(e.key==="Escape"){if(sheet.classList.contains("open")){closeSheet();e.preventDefault()}else if(S.full){S.full=false;render()}else if(typing)e.target.blur();return}
+  if(!typing&&F&&F.mode==="sitdet"&&(e.key==="ArrowLeft"||e.key==="ArrowRight")){S.sel=addM(S.sel,e.key==="ArrowLeft"?-1:1);render();drawSitDet();return}
   if(typing||sheet.classList.contains("open"))return;
   /* teclado numérico físico (Num Lock) e números da linha de cima vão para a calculadora de cotas quando ela está na tela */
   if(cqVisivel()){let ck=null;
@@ -2762,6 +2765,7 @@ sheetIn.addEventListener("click",async e=>{
     const b1=e.target.closest("[data-cdit]");if(b1){const id=b1.dataset.cdit;navGo(volta,()=>openEdit(id));return}
     const b2=e.target.closest("[data-cdativo]");if(b2&&b2.dataset.cdativo&&S.ativos[b2.dataset.cdativo]){const id=b2.dataset.cdativo;navGo(volta,()=>openAtivo(id));return}}
   if(F&&F.mode==="sitdet"){const f0=F.sdf,volta=()=>openSitDet(f0);
+    const a0=e.target.closest("[data-sdmes]");if(a0){S.sel=addM(S.sel,+a0.dataset.sdmes);render();drawSitDet();return}
     const a1=e.target.closest("[data-sdfix]");if(a1){const id=a1.dataset.sdfix;navGo(volta,()=>openFixa(id));return}
     const a2=e.target.closest("[data-sdit]");if(a2){const id=a2.dataset.sdit;navGo(volta,()=>openEdit(id));return}
     const a3=e.target.closest("[data-sdcard]");if(a3){const k=a3.dataset.sdcard;closeSheet();S.tab="lanc";S.lancVista="mes";S.filtro=[k];S.fcat=[];S.fquem=[];S.busca="";render();window.scrollTo(0,0);return}}
